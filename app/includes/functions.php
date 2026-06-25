@@ -227,7 +227,7 @@ function payment_status(float $soldValue, float $received): string
 function plan_config(): array
 {
     return [
-        'START' => ['name' => 'Start', 'legacy' => 'ESSENCIAL', 'price' => 149, 'priceLabel' => 'R$ 149/mês', 'users' => 'Até 3 usuários', 'userLimit' => 3, 'description' => 'Para empresas pequenas que querem sair das planilhas e organizar a operação.', 'highlighted' => false, 'badge' => ''],
+        'START' => ['name' => 'Start', 'legacy' => 'ESSENCIAL', 'price' => 149, 'priceLabel' => 'R$ 149/mês', 'users' => 'Até 4 usuários', 'userLimit' => 4, 'description' => 'Para empresas pequenas que querem sair das planilhas e organizar a operação.', 'highlighted' => false, 'badge' => ''],
         'PROFISSIONAL' => ['name' => 'Profissional', 'legacy' => 'PROFISSIONAL', 'price' => 297, 'priceLabel' => 'R$ 297/mês', 'users' => 'Até 8 usuários', 'userLimit' => 8, 'description' => 'Para empresas que precisam controlar projetos, financeiro, metas e equipe.', 'highlighted' => true, 'badge' => 'Mais escolhido'],
         'PREMIUM' => ['name' => 'Business', 'legacy' => 'PREMIUM', 'price' => 497, 'priceLabel' => 'R$ 497/mês', 'users' => 'Até 15 usuários', 'userLimit' => 15, 'description' => 'Para operações maiores que precisam de mais usuários, controle e suporte.', 'highlighted' => false, 'badge' => ''],
     ];
