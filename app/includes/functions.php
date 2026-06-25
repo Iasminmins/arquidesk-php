@@ -144,7 +144,7 @@ function status_options(string $stage): array
 {
     return match ($stage) {
         'PROJETO' => ['Sondagem', 'Medição', 'Projeto', 'Pronto para apresentação'],
-        'NEGOCIACAO' => ['Detalhamento de venda', 'Proposta enviada', 'Em negociação', 'Aguardando retorno', 'Fechado', 'Perdido'],
+        'NEGOCIACAO' => ['Detalhamento de venda', 'Proposta enviada', 'Em negociação', 'Aguardando retorno', 'Fechado', 'Perdido', 'Desistida'],
         'CONFERENCIA' => ['Medição', 'Conferência', 'Detalhamento', 'Ajuste pendente', 'Liberado para fábrica'],
         'MONTAGEM' => ['Vistoria de montagem', 'Agendada', 'Início da montagem', 'Em montagem', 'Pendente', 'Finalizada'],
         'ASSISTENCIA' => ['Aberta', 'Em atendimento', 'Aguardando peça'],

@@ -34,9 +34,14 @@ if ($stage === 'FINALIZADO') {
     $placeholders = implode(',', array_fill(0, count($later), '?'));
     $baseSql .= " and p.current_stage in ({$placeholders})";
     array_push($params, ...$later);
+} elseif ($view === 'desistidas' && $stage === 'NEGOCIACAO') {
+    $baseSql .= " and p.current_stage = 'NEGOCIACAO' and p.negotiation_status = 'Desistida'";
 } else {
     $baseSql .= " and p.current_stage = ?";
     $params[] = $stage;
+    if ($stage === 'NEGOCIACAO') {
+        $baseSql .= " and (p.negotiation_status IS NULL or p.negotiation_status != 'Desistida')";
+    }
 }
 
 if ($search !== '') {
@@ -71,6 +76,19 @@ foreach ($counts as $itemStage => $count) {
     if ($stage !== 'FINALIZADO' && stage_order($itemStage) > $currentOrder) {
         $completedCount += $count;
     }
+}
+
+// Count desistidas for NEGOCIACAO
+$desistidasCount = 0;
+if ($stage === 'NEGOCIACAO') {
+    $dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
+    $dParams = [$companyId];
+    if ($user['role'] === 'PROJETISTA') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
+    $dStmt = db()->prepare($dSql);
+    $dStmt->execute($dParams);
+    $desistidasCount = (int) $dStmt->fetchColumn();
+    // Adjust active count to exclude desistidas
+    $activeCount = max(0, $activeCount - $desistidasCount);
 }
 
 $canCreate = can_create_project($user, $stage);
@@ -131,13 +149,18 @@ require __DIR__ . '/../app/includes/sidebar.php';
     </div>
 
     <?php if ($stage !== 'FINALIZADO'): ?>
-        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit sm:grid-cols-2">
-            <a class="rounded-md px-4 py-2 <?= $view !== 'completed' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=<?= e($stage) ?>&view=active">
+        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit <?= $stage === 'NEGOCIACAO' ? 'sm:grid-cols-3' : 'sm:grid-cols-2' ?>">
+            <a class="rounded-md px-4 py-2 <?= $view === 'active' || $view === '' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=<?= e($stage) ?>&view=active">
                 <?= e(stage_label($stage)) ?> em andamento <span class="ml-2 opacity-70"><?= $activeCount ?></span>
             </a>
             <a class="rounded-md px-4 py-2 <?= $view === 'completed' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=<?= e($stage) ?>&view=completed">
                 <?= e(stage_label($stage)) ?> finalizados <span class="ml-2 opacity-70"><?= $completedCount ?></span>
             </a>
+            <?php if ($stage === 'NEGOCIACAO'): ?>
+            <a class="rounded-md px-4 py-2 <?= $view === 'desistidas' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=NEGOCIACAO&view=desistidas">
+                Desistidas <span class="ml-2 opacity-70"><?= $desistidasCount ?></span>
+            </a>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
@@ -200,7 +223,13 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                             <button class="grid h-9 w-9 place-items-center rounded-md border border-red-200 text-red-600 hover:bg-red-50" type="submit" title="Excluir"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                                         </form>
                                     <?php endif; ?>
-                                    <?php if ($project['current_stage'] === $stage && next_stage($project['current_stage']) && $user['role'] !== 'CONFERENTE'): ?>
+                                    <?php if ($stage === 'NEGOCIACAO' && $project['current_stage'] === 'NEGOCIACAO' && ($project['negotiation_status'] ?? '') !== 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
+                                        <a class="rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50" href="/project-desistir.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Marcar como desistida?')">Desistir</a>
+                                        <a class="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" href="/project-to-future.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Enviar para Clientes Futuros?')">Futuro</a>
+                                    <?php endif; ?>
+                                    <?php if ($stage === 'NEGOCIACAO' && ($project['negotiation_status'] ?? '') === 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
+                                        <a class="inline-flex h-9 items-center whitespace-nowrap rounded-md bg-ink px-3 text-xs font-bold text-white" href="/project-reativar.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Reativar esta negociação?')">Voltar para Negociação</a>
+                                    <?php elseif ($project['current_stage'] === $stage && next_stage($project['current_stage']) && $user['role'] !== 'CONFERENTE' && ($project['negotiation_status'] ?? '') !== 'Desistida'): ?>
                                         <?php $nextLabel = stage_label(next_stage($project['current_stage'])); ?>
                                         <form method="post" action="/project-move.php">
                                             <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
