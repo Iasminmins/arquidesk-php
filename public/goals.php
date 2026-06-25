@@ -43,6 +43,8 @@ $designersStmt = db()->prepare("select id, name, email from users where company_
 $designersStmt->execute([$companyId]);
 $designers = $designersStmt->fetchAll();
 
+$metrica = $_GET['metrica'] ?? 'recebido';
+
 $rows = [];
 foreach ($designers as $designer) {
     $goalStmt = db()->prepare('select * from designer_goals where company_id = ? and designer_id = ? and month = ? and year = ? limit 1');
@@ -53,8 +55,13 @@ foreach ($designers as $designer) {
     $salesStmt->execute([$companyId, (int) $designer['id'], $start, $end]);
     $sales = $salesStmt->fetch();
 
+    $receivedStmt = db()->prepare('select coalesce(sum(fp.amount), 0) as received from financial_payments fp join financial_sales fs on fs.id = fp.financial_sale_id where fp.company_id = ? and fs.designer_id = ? and fp.payment_date between ? and ?');
+    $receivedStmt->execute([$companyId, (int) $designer['id'], $start, $end]);
+    $received = (float) $receivedStmt->fetchColumn();
+
     $goalAmount = (float) ($goal['goal_amount'] ?? 0);
-    $closed = (float) ($sales['closed'] ?? 0);
+    $soldValue = (float) ($sales['closed'] ?? 0);
+    $closed = $metrica === 'recebido' ? $received : $soldValue;
     $count = (int) ($sales['count_sales'] ?? 0);
     $rows[] = [
         'designer' => $designer,
@@ -113,6 +120,12 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <label class="grid gap-1 text-sm font-semibold">Ano
             <input class="min-h-10 rounded-md border border-line px-3" type="number" name="year" value="<?= $year ?>">
         </label>
+        <label class="grid gap-1 text-sm font-semibold">Exibir por
+            <select class="min-h-10 rounded-md border border-line px-3" name="metrica">
+                <option value="recebido" <?= $metrica === 'recebido' ? 'selected' : '' ?>>Valor recebido no mês</option>
+                <option value="vendido" <?= $metrica === 'vendido' ? 'selected' : '' ?>>Valor vendido no mês</option>
+            </select>
+        </label>
         <button class="min-h-10 rounded-md border border-line bg-white px-4 text-sm font-semibold" type="submit">Filtrar</button>
     </form>
 
@@ -123,7 +136,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <strong class="mt-2 block text-3xl"><?= money_br($myRow['goal']) ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-6">
-                <p class="text-sm text-slate-500">Meu total fechado</p>
+                <p class="text-sm text-slate-500"><?= $metrica === 'recebido' ? 'Total que entrou' : 'Total que vendeu' ?></p>
                 <strong class="mt-2 block text-3xl"><?= money_br($myRow['closed']) ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-6">
