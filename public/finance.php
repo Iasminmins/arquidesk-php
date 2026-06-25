@@ -192,10 +192,10 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <input type="hidden" name="save_sale" value="1">
                 <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
                 <div class="grid gap-4 md:grid-cols-2">
-                    <label class="grid gap-1 text-sm font-semibold">Vincular a projeto existente
-                        <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="client_project_id">
+                    <label class="grid gap-1 text-sm font-semibold overflow-hidden">Vincular a projeto existente
+                        <select class="min-h-10 w-full rounded-md border border-line px-3 outline-none focus:border-ink" name="client_project_id" onchange="fillFromProject(this)" style="text-overflow:ellipsis">
                             <option value="">Venda avulsa</option>
-                            <?php foreach ($projects as $proj): ?><option value="<?= (int) $proj['id'] ?>" <?= (int) ($edit['client_project_id'] ?? 0) === (int) $proj['id'] ? 'selected' : '' ?>><?= e($proj['client_name'] . ' - ' . $proj['project_name']) ?></option><?php endforeach; ?>
+                            <?php foreach ($projects as $proj): ?><option value="<?= (int) $proj['id'] ?>" data-client="<?= e($proj['client_name']) ?>" data-project="<?= e($proj['project_name']) ?>" data-designer="<?= (int) ($proj['designer_id'] ?? 0) ?>" data-value="<?= e((string) ($proj['closed_value'] ?? '')) ?>" <?= (int) ($edit['client_project_id'] ?? 0) === (int) $proj['id'] ? 'selected' : '' ?>><?= e(mb_substr($proj['client_name'], 0, 20)) ?> - <?= e(mb_substr($proj['project_name'], 0, 15)) ?></option><?php endforeach; ?>
                         </select>
                     </label>
                     <label class="grid gap-1 text-sm font-semibold">Projetista responsável
@@ -232,15 +232,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     <div id="payments-container">
                         <?php $payCount = max(1, count($editPayments)); ?>
                         <?php for ($i = 0; $i < $payCount; $i++): $pay = $editPayments[$i] ?? null; ?>
-                            <div class="grid gap-3 md:grid-cols-[100px_1fr_1fr_auto] md:items-end mt-2">
-                                <strong class="text-sm"><?= $i + 1 ?>º pagamento</strong>
+                            <div class="grid grid-cols-[100px_1fr_1fr] gap-3 items-end mt-2">
+                                <span class="min-h-10 flex items-center text-sm font-bold"><?= $i + 1 ?>º pagamento</span>
                                 <label class="grid gap-1 text-sm font-semibold">Valor
-                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="Valor" value="<?= e((string) ($pay['amount'] ?? '')) ?>">
+                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="0,00" value="<?= e((string) ($pay['amount'] ?? '')) ?>">
                                 </label>
                                 <label class="grid gap-1 text-sm font-semibold">Data
-                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]" value="<?= e($pay['payment_date'] ?? '') ?>">
+                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]" value="<?= e($pay['payment_date'] ?? date('Y-m-d')) ?>">
                                 </label>
-                                <?php if ($i > 0): ?><button type="button" onclick="this.parentElement.remove()" class="min-h-10 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50">Remover</button><?php else: ?><div></div><?php endif; ?>
                             </div>
                         <?php endfor; ?>
                     </div>
@@ -250,13 +249,26 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 var payIndex = <?= $payCount ?>;
                 function addPayment() {
                     payIndex++;
-                    var html = '<div class="grid gap-3 md:grid-cols-[100px_1fr_1fr_auto] md:items-end mt-2">'
-                        + '<strong class="text-sm">' + payIndex + 'º pagamento</strong>'
-                        + '<label class="grid gap-1 text-sm font-semibold">Valor<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="Valor"></label>'
-                        + '<label class="grid gap-1 text-sm font-semibold">Data<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]"></label>'
-                        + '<button type="button" onclick="this.parentElement.remove()" class="min-h-10 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50">Remover</button>'
+                    var today = new Date().toISOString().slice(0,10);
+                    var html = '<div class="grid grid-cols-[100px_1fr_1fr] gap-3 items-end mt-2">'
+                        + '<span class="min-h-10 flex items-center text-sm font-bold">' + payIndex + 'º pagamento</span>'
+                        + '<label class="grid gap-1 text-sm font-semibold">Valor<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="0,00"></label>'
+                        + '<label class="grid gap-1 text-sm font-semibold">Data<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]" value="' + today + '"></label>'
                         + '</div>';
                     document.getElementById('payments-container').insertAdjacentHTML('beforeend', html);
+                }
+                function fillFromProject(sel) {
+                    var opt = sel.options[sel.selectedIndex];
+                    if (!opt.value) return;
+                    var form = sel.closest('form');
+                    var cn = form.querySelector('[name="client_name"]');
+                    var pn = form.querySelector('[name="project_name"]');
+                    var sv = form.querySelector('[name="sold_value"]');
+                    var di = form.querySelector('[name="designer_id"]:not([type="hidden"])');
+                    if (cn) cn.value = opt.dataset.client || '';
+                    if (pn) pn.value = opt.dataset.project || '';
+                    if (sv && opt.dataset.value) sv.value = opt.dataset.value;
+                    if (di && opt.dataset.designer) di.value = opt.dataset.designer;
                 }
                 </script>
                 <div class="mt-5 flex justify-end">
