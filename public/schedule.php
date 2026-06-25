@@ -10,14 +10,18 @@ $month = max(1, min(12, (int) ($_GET['month'] ?? $today->format('n'))));
 $year = (int) ($_GET['year'] ?? $today->format('Y'));
 [$start, $end] = month_range($year, $month);
 
-$stmt = db()->prepare(
-    'select p.*, u.name as designer_name
+$projectSql = 'select p.*, u.name as designer_name
      from client_projects p
      left join users u on u.id = p.designer_id
-     where p.company_id = ?
-     order by p.updated_at desc, p.created_at desc'
-);
-$stmt->execute([$companyId]);
+     where p.company_id = ?';
+$projectParams = [$companyId];
+if ($user['role'] === 'PROJETISTA') {
+    $projectSql .= ' and p.designer_id = ?';
+    $projectParams[] = (int) $user['id'];
+}
+$projectSql .= ' order by p.updated_at desc, p.created_at desc';
+$stmt = db()->prepare($projectSql);
+$stmt->execute($projectParams);
 $projects = $stmt->fetchAll();
 
 $items = [];
