@@ -1,9 +1,14 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Bloqueia acesso direto a codigo, banco e arquivos internos
-    RewriteRule ^(app|database)(/|$) - [F,L]
-    RewriteRule ^(DEPLOY-HOSTINGER\.md|README\.md|\.gitignore)$ - [F,L]
+    # Forca HTTPS em producao
+    RewriteCond %{HTTPS} off
+    RewriteCond %{HTTP_HOST} !^(127\.0\.0\.1|localhost) [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Bloqueia acesso direto a codigo, banco, arquivos internos e .git
+    RewriteRule ^(app|database|storage|\.git)(/|$) - [F,L]
+    RewriteRule ^(DEPLOY-HOSTINGER\.md|README\.md|\.gitignore|\.env)$ - [F,L]
 
     RewriteRule ^$ public/index.php [L]
     RewriteCond %{REQUEST_URI} !^/public/

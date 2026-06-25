@@ -53,6 +53,7 @@ require __DIR__ . '/../app/includes/header.php';
                     <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="password" name="password" required>
                 </label>
                 <button class="min-h-11 rounded-md bg-ink px-4 font-bold text-white hover:opacity-95" type="submit">Entrar</button>
+                <a class="text-center text-sm text-slate-500 hover:text-ink" href="/forgot-password.php">Esqueci minha senha</a>
             </div>
         </form>
     </section>

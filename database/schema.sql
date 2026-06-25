@@ -205,3 +205,14 @@ create table if not exists future_clients (
   constraint fc_project_fk foreign key (converted_project_id) references client_projects(id) on delete set null,
   index fc_company_status_idx (company_id, status)
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+
+create table if not exists password_resets (
+  id int unsigned auto_increment primary key,
+  user_id int unsigned not null,
+  token varchar(64) not null unique,
+  expires_at datetime not null,
+  used_at datetime null,
+  created_at timestamp not null default current_timestamp,
+  constraint pr_user_fk foreign key (user_id) references users(id) on delete cascade,
+  index pr_token_idx (token)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;

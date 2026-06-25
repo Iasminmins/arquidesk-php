@@ -13,8 +13,32 @@ $companyId = (int) $user['company_id'];
 $error = '';
 $subscription = get_subscription($companyId);
 $userLimit = plan_user_limit($subscription['plan']);
+$editEmployee = null;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (!empty($_GET['edit'])) {
+    $editStmt = db()->prepare('select * from users where id = ? and company_id = ?');
+    $editStmt->execute([(int) $_GET['edit'], $companyId]);
+    $editEmployee = $editStmt->fetch();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
+    $editId = (int) $_POST['edit_id'];
+    $editName = trim($_POST['edit_name'] ?? '');
+    $editEmail = trim($_POST['edit_email'] ?? '');
+    $editRole = $_POST['edit_role'] ?? 'PROJETISTA';
+    $editPassword = $_POST['edit_password'] ?? '';
+
+    if ($editName && $editEmail) {
+        if ($editPassword && strlen($editPassword) >= 6) {
+            db()->prepare('update users set name = ?, email = ?, role = ?, password_hash = ? where id = ? and company_id = ?')->execute([$editName, $editEmail, $editRole, password_hash($editPassword, PASSWORD_DEFAULT), $editId, $companyId]);
+        } else {
+            db()->prepare('update users set name = ?, email = ?, role = ? where id = ? and company_id = ?')->execute([$editName, $editEmail, $editRole, $editId, $companyId]);
+        }
+        redirect('/employees.php?ok=1');
+    } else {
+        $error = 'Preencha nome e e-mail.';
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -54,6 +78,32 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?php if (!empty($_GET['ok'])): ?><div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Operacao concluida.</div><?php endif; ?>
     <?php if ($error): ?><div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div><?php endif; ?>
 
+    <?php if ($editEmployee): ?>
+    <form method="post" class="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 xl:grid-cols-[1fr_1fr_180px_180px_auto] xl:items-end">
+        <input type="hidden" name="edit_id" value="<?= (int) $editEmployee['id'] ?>">
+        <label class="grid gap-1 text-sm font-semibold">Nome
+            <input class="min-h-10 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" name="edit_name" required value="<?= e($editEmployee['name']) ?>">
+        </label>
+        <label class="grid gap-1 text-sm font-semibold">E-mail
+            <input class="min-h-10 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" type="email" name="edit_email" required value="<?= e($editEmployee['email']) ?>">
+        </label>
+        <label class="grid gap-1 text-sm font-semibold">Nova senha (opcional)
+            <input class="min-h-10 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" type="password" name="edit_password" minlength="6" placeholder="Manter atual">
+        </label>
+        <label class="grid gap-1 text-sm font-semibold">Permissão
+            <select class="min-h-10 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" name="edit_role">
+                <option value="PROJETISTA" <?= $editEmployee['role'] === 'PROJETISTA' ? 'selected' : '' ?>>Projetista</option>
+                <option value="CONFERENTE" <?= $editEmployee['role'] === 'CONFERENTE' ? 'selected' : '' ?>>Conferente</option>
+                <option value="ADMIN_EMPRESA" <?= $editEmployee['role'] === 'ADMIN_EMPRESA' ? 'selected' : '' ?>>Admin empresa</option>
+            </select>
+        </label>
+        <div class="flex gap-2">
+            <button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white" type="submit">Salvar</button>
+            <a class="inline-flex min-h-10 items-center rounded-md border border-line px-4 text-sm font-semibold hover:bg-white" href="/employees.php">Cancelar</a>
+        </div>
+    </form>
+    <?php endif; ?>
+
     <form method="post" class="grid gap-3 rounded-lg border border-line bg-white p-4 xl:grid-cols-[1fr_1fr_180px_180px_auto] xl:items-end">
         <label class="grid gap-1 text-sm font-semibold">Nome
             <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
@@ -88,6 +138,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                         <td class="p-3"><?= $employee['active'] ? 'Ativo' : 'Inativo' ?></td>
                         <td class="p-3">
                             <div class="flex justify-end gap-2">
+                                <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" href="/employees.php?edit=<?= (int) $employee['id'] ?>">Editar</a>
                                 <form method="post" action="/employee-toggle.php">
                                     <input type="hidden" name="id" value="<?= (int) $employee['id'] ?>">
                                     <button class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" type="submit"><?= $employee['active'] ? 'Desativar' : 'Ativar' ?></button>
