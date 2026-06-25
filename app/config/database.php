@@ -35,6 +35,9 @@ function render_database_error(string $message, array $db): never
     http_response_code(500);
     $safeHost = htmlspecialchars($db['host'], ENT_QUOTES, 'UTF-8');
     $safeName = htmlspecialchars($db['name'], ENT_QUOTES, 'UTF-8');
+    $safeUser = htmlspecialchars($db['user'], ENT_QUOTES, 'UTF-8');
+    $isLocal = in_array($db['host'], ['127.0.0.1', 'localhost', '::1'], true)
+        && ($db['user'] === 'root' || $db['user'] === '');
     ?>
     <!doctype html>
     <html lang="pt-BR">
@@ -52,10 +55,20 @@ function render_database_error(string $message, array $db): never
                     O PHP esta funcionando, mas o MySQL recusou a conexao em
                     <strong><?= $safeHost ?></strong> para o banco <strong><?= $safeName ?></strong>.
                 </p>
+                <div class="mt-4 rounded-md bg-slate-50 p-4 text-sm">
+                    <p><strong>Host:</strong> <?= $safeHost ?></p>
+                    <p><strong>Banco:</strong> <?= $safeName ?></p>
+                    <p><strong>Usuário:</strong> <?= $safeUser ?></p>
+                </div>
                 <div class="mt-5 grid gap-3 rounded-md bg-slate-50 p-4 text-sm">
-                    <p><strong>1.</strong> Abra o Laragon e inicie o MySQL.</p>
-                    <p><strong>2.</strong> Se o banco ainda não existir, acesse <code class="rounded bg-white px-1">/install-database.php</code>.</p>
-                    <p><strong>3.</strong> Se estiver na Hostinger, ajuste usuário, senha e nome do banco em <code class="rounded bg-white px-1">app/config/config.php</code>.</p>
+                    <?php if ($isLocal): ?>
+                        <p><strong>1.</strong> Abra o Laragon e inicie o MySQL.</p>
+                        <p><strong>2.</strong> Se o banco ainda não existir, acesse <code class="rounded bg-white px-1">/install-database.php</code>.</p>
+                    <?php else: ?>
+                        <p><strong>1.</strong> No painel da Hostinger, crie o banco MySQL e anote host, nome, usuário e senha.</p>
+                        <p><strong>2.</strong> Copie <code class="rounded bg-white px-1">app/config/config.local.example.php</code> para <code class="rounded bg-white px-1">app/config/config.local.php</code> e preencha com esses dados (host geralmente é <code class="rounded bg-white px-1">localhost</code>).</p>
+                        <p><strong>3.</strong> Acesse <code class="rounded bg-white px-1">/install-database.php</code> para importar as tabelas, ou importe <code class="rounded bg-white px-1">database/schema.sql</code> pelo phpMyAdmin.</p>
+                    <?php endif; ?>
                 </div>
                 <a class="mt-5 inline-flex min-h-10 items-center rounded-md bg-slate-900 px-4 text-sm font-bold text-white" href="/install-database.php">
                     Tentar instalar banco

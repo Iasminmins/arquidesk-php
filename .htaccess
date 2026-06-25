@@ -1,6 +1,10 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Bloqueia acesso direto a codigo, banco e arquivos internos
+    RewriteRule ^(app|database)(/|$) - [F,L]
+    RewriteRule ^(DEPLOY-HOSTINGER\.md|README\.md|\.gitignore)$ - [F,L]
+
     RewriteRule ^$ public/index.php [L]
     RewriteCond %{REQUEST_URI} !^/public/
     RewriteRule ^(.*)$ public/$1 [L]

@@ -5,19 +5,38 @@ $db = $config['db'];
 $message = '';
 $error = '';
 
+if (($config['env'] ?? 'local') === 'production') {
+    try {
+        require_once __DIR__ . '/../app/config/database.php';
+        $hasUsers = (int) db()->query('select count(*) from users')->fetchColumn() > 0;
+        if ($hasUsers) {
+            http_response_code(403);
+            exit('Instalacao ja concluida. Remova ou bloqueie install-database.php em producao.');
+        }
+    } catch (Throwable $ignored) {
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        $dsn = "mysql:host={$db['host']};charset={$db['charset']}";
-        $pdo = new PDO($dsn, $db['user'], $db['pass'], [
+        $pdoOptions = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        ];
 
         $database = str_replace('`', '', $db['name']);
         $charset = $db['charset'];
-        $pdo->exec("create database if not exists `{$database}` character set {$charset} collate {$charset}_unicode_ci");
-        $pdo->exec("use `{$database}`");
+
+        try {
+            $dsn = "mysql:host={$db['host']};dbname={$database};charset={$charset}";
+            $pdo = new PDO($dsn, $db['user'], $db['pass'], $pdoOptions);
+        } catch (PDOException $exception) {
+            $dsn = "mysql:host={$db['host']};charset={$charset}";
+            $pdo = new PDO($dsn, $db['user'], $db['pass'], $pdoOptions);
+            $pdo->exec("create database if not exists `{$database}` character set {$charset} collate {$charset}_unicode_ci");
+            $pdo->exec("use `{$database}`");
+        }
 
         $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
         foreach (array_filter(array_map('trim', explode(';', $schema))) as $statement) {
