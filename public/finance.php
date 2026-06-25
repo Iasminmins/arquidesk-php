@@ -127,8 +127,8 @@ $totalSold = array_sum(array_map(fn($sale) => (float) $sale['sold_value'], $sale
 $totalReceived = array_sum(array_map(fn($payment) => (float) $payment['amount'], $payments));
 $commissionPercent = $totalReceived <= 100000 ? 5 : ($totalReceived <= 150000 ? 6 : 7);
 
-$commissionStmt = db()->prepare('select * from financial_commission_settings where company_id = ? and (designer_id = ? or (designer_id is null and ? = \'\')) and month = ? and year = ? limit 1');
-$commissionStmt->execute([$companyId, $designerFilter ?: null, $designerFilter, $month, $year]);
+$commissionStmt = db()->prepare('select * from financial_commission_settings where company_id = ? and month = ? and year = ? and (designer_id = ? or designer_id is null) order by designer_id desc limit 1');
+$commissionStmt->execute([$companyId, $month, $year, $designerFilter ?: null]);
 $commission = $commissionStmt->fetch();
 if ($commission && (float) $commission['commission_percent'] > 0) {
     $commissionPercent = (float) $commission['commission_percent'];
