@@ -229,18 +229,36 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 </label>
                 <section class="mt-5 grid gap-3 rounded-lg border border-line p-4">
                     <h3 class="font-bold">Pagamentos recebidos</h3>
-                    <?php for ($i = 0; $i < 6; $i++): $pay = $editPayments[$i] ?? null; ?>
-                        <div class="grid gap-3 md:grid-cols-[100px_1fr_1fr]">
-                            <strong class="flex items-end text-sm"><?= $i + 1 ?>º pagamento</strong>
-                            <label class="grid gap-1 text-sm font-semibold">Valor
-                                <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="Valor" value="<?= e((string) ($pay['amount'] ?? '')) ?>">
-                            </label>
-                            <label class="grid gap-1 text-sm font-semibold">Data
-                                <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]" value="<?= e($pay['payment_date'] ?? '') ?>">
-                            </label>
-                        </div>
-                    <?php endfor; ?>
+                    <div id="payments-container">
+                        <?php $payCount = max(1, count($editPayments)); ?>
+                        <?php for ($i = 0; $i < $payCount; $i++): $pay = $editPayments[$i] ?? null; ?>
+                            <div class="grid gap-3 md:grid-cols-[100px_1fr_1fr_auto] md:items-end mt-2">
+                                <strong class="text-sm"><?= $i + 1 ?>º pagamento</strong>
+                                <label class="grid gap-1 text-sm font-semibold">Valor
+                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="Valor" value="<?= e((string) ($pay['amount'] ?? '')) ?>">
+                                </label>
+                                <label class="grid gap-1 text-sm font-semibold">Data
+                                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]" value="<?= e($pay['payment_date'] ?? '') ?>">
+                                </label>
+                                <?php if ($i > 0): ?><button type="button" onclick="this.parentElement.remove()" class="min-h-10 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50">Remover</button><?php else: ?><div></div><?php endif; ?>
+                            </div>
+                        <?php endfor; ?>
+                    </div>
+                    <button type="button" onclick="addPayment()" class="mt-2 min-h-10 rounded-md border border-line px-4 text-sm font-semibold hover:bg-fog">+ Adicionar pagamento</button>
                 </section>
+                <script>
+                var payIndex = <?= $payCount ?>;
+                function addPayment() {
+                    payIndex++;
+                    var html = '<div class="grid gap-3 md:grid-cols-[100px_1fr_1fr_auto] md:items-end mt-2">'
+                        + '<strong class="text-sm">' + payIndex + 'º pagamento</strong>'
+                        + '<label class="grid gap-1 text-sm font-semibold">Valor<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="payment_amount[]" placeholder="Valor"></label>'
+                        + '<label class="grid gap-1 text-sm font-semibold">Data<input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="payment_date[]"></label>'
+                        + '<button type="button" onclick="this.parentElement.remove()" class="min-h-10 rounded-md border border-red-200 px-3 text-xs font-semibold text-red-600 hover:bg-red-50">Remover</button>'
+                        + '</div>';
+                    document.getElementById('payments-container').insertAdjacentHTML('beforeend', html);
+                }
+                </script>
                 <div class="mt-5 flex justify-end">
                     <button class="min-h-10 rounded-md bg-ink px-5 text-sm font-bold text-white" type="submit"><?= $edit ? 'Salvar alterações' : 'Salvar venda' ?></button>
                 </div>

@@ -65,11 +65,17 @@ function dt(array $row, string $key): ?string {
     return xlsx_date_value($v);
 }
 
+function normalize_name(string $name): string {
+    $name = mb_strtolower(trim($name));
+    $map = ['á'=>'a','à'=>'a','ã'=>'a','â'=>'a','é'=>'e','ê'=>'e','í'=>'i','ó'=>'o','ô'=>'o','õ'=>'o','ú'=>'u','ü'=>'u','ç'=>'c','ñ'=>'n'];
+    return strtr($name, $map);
+}
+
 function build_designer_map(int $companyId): array {
     $stmt = db()->prepare("select id, name from users where company_id = ? and active = 1");
     $stmt->execute([$companyId]);
     $map = [];
-    foreach ($stmt->fetchAll() as $r) { $map[mb_strtolower(trim($r['name']))] = (int) $r['id']; }
+    foreach ($stmt->fetchAll() as $r) { $map[normalize_name($r['name'])] = (int) $r['id']; }
     return $map;
 }
 
