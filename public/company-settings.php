@@ -16,18 +16,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $coverUrl = null_if_empty($_POST['cover_image_url'] ?? '');
 
     if (!empty($_FILES['logo_file']['tmp_name']) && $_FILES['logo_file']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['logo_file']['name'], PATHINFO_EXTENSION) ?: 'png';
+        $ext = strtolower(pathinfo($_FILES['logo_file']['name'], PATHINFO_EXTENSION) ?: 'png');
         $filename = 'logo-' . $companyId . '-' . time() . '.' . $ext;
-        $dest = __DIR__ . '/../uploads/' . $filename;
-        if (move_uploaded_file($_FILES['logo_file']['tmp_name'], $dest)) {
+        $uploadDir = __DIR__ . '/uploads/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+        if (move_uploaded_file($_FILES['logo_file']['tmp_name'], $uploadDir . $filename)) {
             $logoUrl = '/uploads/' . $filename;
         }
     }
     if (!empty($_FILES['cover_file']['tmp_name']) && $_FILES['cover_file']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['cover_file']['name'], PATHINFO_EXTENSION) ?: 'png';
+        $ext = strtolower(pathinfo($_FILES['cover_file']['name'], PATHINFO_EXTENSION) ?: 'png');
         $filename = 'cover-' . $companyId . '-' . time() . '.' . $ext;
-        $dest = __DIR__ . '/../uploads/' . $filename;
-        if (move_uploaded_file($_FILES['cover_file']['tmp_name'], $dest)) {
+        $uploadDir = __DIR__ . '/uploads/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+        if (move_uploaded_file($_FILES['cover_file']['tmp_name'], $uploadDir . $filename)) {
             $coverUrl = '/uploads/' . $filename;
         }
     }
