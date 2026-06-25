@@ -335,7 +335,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <form method="get" action="/export.php" class="mt-5 grid gap-4">
                 <label class="grid gap-1 text-sm font-semibold">Tipo de dados
                     <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="type">
+                        <option value="all">Exportar tudo (completo)</option>
                         <option value="projects">Projetos</option>
+                        <option value="future_clients">Clientes Futuros</option>
                         <option value="finance">Financeiro (vendas)</option>
                         <option value="payments">Pagamentos</option>
                         <option value="goals">Metas</option>
