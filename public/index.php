@@ -185,7 +185,7 @@ if ($period === 'today') {
     $periodLabel = 'mês';
 }
 
-$projectSql = "select current_stage, count(*) as total from client_projects where company_id = ? and date(updated_at) between ? and ?";
+$projectSql = "select current_stage, count(*) as total from client_projects where company_id = ? and date(coalesce(updated_at, created_at)) between ? and ?";
 $projectParams = [$companyId, $periodStart, $periodEnd];
 if ($user['role'] === 'PROJETISTA') {
     $projectSql .= " and designer_id = ?";
@@ -221,7 +221,7 @@ $paymentsStmt->execute($paymentsParams);
 $totalReceived = (float) $paymentsStmt->fetchColumn();
 $commissionRate = commission_rate($totalReceived);
 
-$recentSql = "select p.*, u.name as designer_name from client_projects p left join users u on u.id = p.designer_id where p.company_id = ? and date(p.updated_at) between ? and ?";
+$recentSql = "select p.*, u.name as designer_name from client_projects p left join users u on u.id = p.designer_id where p.company_id = ? and date(coalesce(p.updated_at, p.created_at)) between ? and ?";
 $recentParams = [$companyId, $periodStart, $periodEnd];
 if ($user['role'] === 'PROJETISTA') {
     $recentSql .= " and p.designer_id = ?";
