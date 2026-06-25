@@ -2,11 +2,14 @@
 
 require_once __DIR__ . '/../app/includes/auth.php';
 
-$hasUsers = (int) db()->query('select count(*) from users')->fetchColumn() > 0;
+if (current_user()) {
+    redirect('/');
+}
+
 $error = '';
 $success = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$hasUsers) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $companyName = trim($_POST['company_name'] ?? '');
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
@@ -15,29 +18,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$hasUsers) {
     if (!$companyName || !$name || !$email || strlen($password) < 6) {
         $error = 'Preencha todos os campos. A senha precisa ter pelo menos 6 caracteres.';
     } else {
-        $pdo = db();
-        $pdo->beginTransaction();
-        $stmt = $pdo->prepare('insert into companies (name, email) values (?, ?)');
-        $stmt->execute([$companyName, $email]);
-        $companyId = (int) $pdo->lastInsertId();
+        // Check if email already exists
+        $check = db()->prepare('select id from users where email = ? limit 1');
+        $check->execute([$email]);
+        if ($check->fetch()) {
+            $error = 'Este e-mail já está cadastrado. Faça login ou use outro e-mail.';
+        } else {
+            $pdo = db();
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare('insert into companies (name, email) values (?, ?)');
+                $stmt->execute([$companyName, $email]);
+                $companyId = (int) $pdo->lastInsertId();
 
-        $stmt = $pdo->prepare('insert into users (company_id, name, email, password_hash, role) values (?, ?, ?, ?, ?)');
-        $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), 'ADMIN_EMPRESA']);
+                $stmt = $pdo->prepare('insert into users (company_id, name, email, password_hash, role) values (?, ?, ?, ?, ?)');
+                $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), 'ADMIN_EMPRESA']);
 
-        $selectedPlan = $_POST['selected_plan'] ?? 'PROFISSIONAL';
-        $validPlans = ['START', 'PROFISSIONAL', 'PREMIUM'];
-        if (!in_array($selectedPlan, $validPlans, true)) $selectedPlan = 'PROFISSIONAL';
+                $selectedPlan = $_POST['selected_plan'] ?? 'PROFISSIONAL';
+                $validPlans = ['START', 'PROFISSIONAL', 'PREMIUM'];
+                if (!in_array($selectedPlan, $validPlans, true)) $selectedPlan = 'PROFISSIONAL';
 
-        $stmt = $pdo->prepare('insert into subscriptions (company_id, plan, status, trial_ends_at, selected_plan_key) values (?, ?, ?, date_add(curdate(), interval 30 day), ?)');
-        $stmt->execute([$companyId, $selectedPlan, 'TRIAL', $selectedPlan]);
-        $pdo->commit();
+                $stmt = $pdo->prepare('insert into subscriptions (company_id, plan, status, trial_ends_at, selected_plan_key) values (?, ?, ?, date_add(curdate(), interval 30 day), ?)');
+                $stmt->execute([$companyId, $selectedPlan, 'TRIAL', $selectedPlan]);
+                $pdo->commit();
 
-        $success = 'Administrador criado. Já pode entrar no sistema.';
-        $hasUsers = true;
+                // Auto-login
+                login_user($email, $password);
+                redirect('/');
+            } catch (Throwable $e) {
+                $pdo->rollBack();
+                $error = 'Erro ao criar conta. Tente novamente.';
+            }
+        }
     }
 }
 
-$pageTitle = 'Setup inicial';
+$pageTitle = 'Cadastrar';
 require __DIR__ . '/../app/includes/header.php';
 ?>
 <main class="grid min-h-screen grid-cols-1 bg-fog lg:grid-cols-[1.1fr_0.9fr]">
@@ -58,48 +74,41 @@ require __DIR__ . '/../app/includes/header.php';
                 <a class="rounded bg-white px-3 py-2 text-center text-ink shadow-sm" href="/setup.php">Cadastrar</a>
             </div>
             <h2 class="mt-6 text-2xl font-bold">Criar conta</h2>
+            <p class="mt-1 text-sm text-slate-500">Cadastre sua empresa e comece com 1 mês grátis.</p>
 
-            <?php if ($hasUsers && !$success): ?>
-                <p class="mt-4 text-sm text-slate-600">Já existe usuário cadastrado. Acesse pelo login.</p>
-                <a class="mt-5 inline-flex min-h-10 items-center rounded-md bg-ink px-4 font-bold text-white" href="/login.php">Ir para login</a>
-            <?php else: ?>
-                <?php if ($error): ?>
-                    <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div>
-                <?php endif; ?>
-                <?php if ($success): ?>
-                    <div class="mt-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"><?= e($success) ?></div>
-                    <a class="mt-5 inline-flex min-h-10 items-center rounded-md bg-ink px-4 font-bold text-white" href="/login.php">Entrar agora</a>
-                <?php else: ?>
-                    <form method="post" class="mt-6 grid gap-4">
-                        <?php
-                        $planFromUrl = $_GET['plan'] ?? '';
-                        $planLabel = '';
-                        if ($planFromUrl && isset(plan_config()[$planFromUrl])) {
-                            $planLabel = plan_config()[$planFromUrl]['name'];
-                        }
-                        ?>
-                        <input type="hidden" name="selected_plan" value="<?= e($planFromUrl ?: 'PROFISSIONAL') ?>">
-                        <?php if ($planLabel): ?>
-                            <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                                Plano selecionado: <strong><?= e($planLabel) ?></strong> · 1 mês grátis
-                            </div>
-                        <?php endif; ?>
-                        <label class="grid gap-1 text-sm font-semibold">Nome
-                            <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
-                        </label>
-                        <label class="grid gap-1 text-sm font-semibold">Empresa
-                            <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="company_name" required>
-                        </label>
-                        <label class="grid gap-1 text-sm font-semibold">E-mail
-                            <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="email" name="email" required>
-                        </label>
-                        <label class="grid gap-1 text-sm font-semibold">Senha
-                            <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="password" name="password" required minlength="6">
-                        </label>
-                        <button class="min-h-11 rounded-md bg-ink px-4 font-bold text-white" type="submit">Criar conta</button>
-                    </form>
-                <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div>
             <?php endif; ?>
+
+            <form method="post" class="mt-6 grid gap-4">
+                <?php
+                $planFromUrl = $_GET['plan'] ?? '';
+                $planLabel = '';
+                if ($planFromUrl && isset(plan_config()[$planFromUrl])) {
+                    $planLabel = plan_config()[$planFromUrl]['name'];
+                }
+                ?>
+                <input type="hidden" name="selected_plan" value="<?= e($planFromUrl ?: 'PROFISSIONAL') ?>">
+                <?php if ($planLabel): ?>
+                    <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                        Plano selecionado: <strong><?= e($planLabel) ?></strong> · 1 mês grátis
+                    </div>
+                <?php endif; ?>
+                <label class="grid gap-1 text-sm font-semibold">Nome
+                    <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
+                </label>
+                <label class="grid gap-1 text-sm font-semibold">Empresa
+                    <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="company_name" required>
+                </label>
+                <label class="grid gap-1 text-sm font-semibold">E-mail
+                    <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="email" name="email" required>
+                </label>
+                <label class="grid gap-1 text-sm font-semibold">Senha
+                    <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="password" name="password" required minlength="6">
+                </label>
+                <button class="min-h-11 rounded-md bg-ink px-4 font-bold text-white" type="submit">Criar conta</button>
+                <p class="text-center text-sm text-slate-500">Já tem conta? <a class="font-semibold text-ink hover:underline" href="/login.php">Entrar</a></p>
+            </form>
         </div>
     </section>
 </main>
