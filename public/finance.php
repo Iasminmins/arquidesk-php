@@ -272,9 +272,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <?php if ($canWriteFinance): ?>
                             <td class="p-3 text-right">
                                 <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e((string) $designerFilter) ?>&edit=<?= (int) $sale['id'] ?>">Editar</a>
-                                <?php if ($user['role'] === 'ADMIN_EMPRESA'): ?>
                                 <a class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e((string) $designerFilter) ?>&delete=<?= (int) $sale['id'] ?>" onclick="return confirm('Excluir venda de <?= e($sale['client_name']) ?>?')">Excluir</a>
-                                <?php endif; ?>
                             </td>
                             <?php endif; ?>
                         </tr>
