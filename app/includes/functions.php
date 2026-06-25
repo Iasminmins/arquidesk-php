@@ -55,22 +55,27 @@ function role_nav(string $role): array
         'PROJETISTA' => [
             '/' => 'Dashboard',
             '/schedule.php' => 'Agendamentos',
+            '/future-clients.php' => 'Clientes Futuros',
             '/projects.php?stage=PROJETO' => 'Projeto',
             '/projects.php?stage=NEGOCIACAO' => 'Negociação',
             '/projects.php?stage=CONFERENCIA' => 'Conferência',
             '/projects.php?stage=MONTAGEM' => 'Montagem',
             '/projects.php?stage=ASSISTENCIA' => 'Assistência',
             '/projects.php?stage=FINALIZADO' => 'Finalizados',
+            '/finance.php' => 'Financeiro',
             '/goals.php?mode=my-goal' => 'Minha Meta',
             '/import-export.php' => 'Minhas Exportações',
         ],
         'CONFERENTE' => [
             '/' => 'Dashboard',
             '/schedule.php' => 'Agendamentos',
+            '/projects.php?stage=PROJETO' => 'Projeto',
+            '/projects.php?stage=NEGOCIACAO' => 'Negociação',
             '/projects.php?stage=CONFERENCIA' => 'Conferência',
             '/projects.php?stage=MONTAGEM' => 'Montagem',
             '/projects.php?stage=ASSISTENCIA' => 'Assistência',
             '/projects.php?stage=FINALIZADO' => 'Finalizados',
+            '/finance.php' => 'Financeiro',
             '/goals.php?mode=team-goals' => 'Metas da Equipe',
             '/import-export.php' => 'Exportações Operacionais',
         ],
@@ -85,6 +90,7 @@ function role_nav(string $role): array
         default => [
             '/' => 'Dashboard',
             '/schedule.php' => 'Agendamentos',
+            '/future-clients.php' => 'Clientes Futuros',
             '/projects.php?stage=PROJETO' => 'Projeto',
             '/projects.php?stage=NEGOCIACAO' => 'Negociação',
             '/projects.php?stage=CONFERENCIA' => 'Conferência',
@@ -216,4 +222,93 @@ function payment_status(float $soldValue, float $received): string
         return 'Pago';
     }
     return 'Parcial';
+}
+
+function plan_config(): array
+{
+    return [
+        'START' => ['name' => 'Start', 'legacy' => 'ESSENCIAL', 'price' => 149, 'priceLabel' => 'R$ 149/mês', 'users' => 'Até 3 usuários', 'userLimit' => 3, 'description' => 'Para empresas pequenas que querem sair das planilhas e organizar a operação.', 'highlighted' => false, 'badge' => ''],
+        'PROFISSIONAL' => ['name' => 'Profissional', 'legacy' => 'PROFISSIONAL', 'price' => 297, 'priceLabel' => 'R$ 297/mês', 'users' => 'Até 8 usuários', 'userLimit' => 8, 'description' => 'Para empresas que precisam controlar projetos, financeiro, metas e equipe.', 'highlighted' => true, 'badge' => 'Mais escolhido'],
+        'PREMIUM' => ['name' => 'Business', 'legacy' => 'PREMIUM', 'price' => 497, 'priceLabel' => 'R$ 497/mês', 'users' => 'Até 15 usuários', 'userLimit' => 15, 'description' => 'Para operações maiores que precisam de mais usuários, controle e suporte.', 'highlighted' => false, 'badge' => ''],
+    ];
+}
+
+function plan_label(string $plan): string
+{
+    $plans = plan_config();
+    return $plans[$plan]['name'] ?? $plans['PROFISSIONAL']['name'];
+}
+
+function plan_user_limit(string $plan): int
+{
+    $plans = plan_config();
+    return $plans[$plan]['userLimit'] ?? $plans['PROFISSIONAL']['userLimit'];
+}
+
+function plan_included_features(): array
+{
+    return [
+        'Gestão completa de projetos',
+        'Fluxo de etapas da operação',
+        'Dashboard gerencial',
+        'Financeiro',
+        'Metas de projetistas',
+        'Controle de comissões',
+        'Agenda',
+        'Permissões por função',
+        'Importação e exportação',
+        'Identidade visual da empresa',
+    ];
+}
+
+function commission_rate(float $totalReceived): float
+{
+    if ($totalReceived > 150000) return 0.07;
+    if ($totalReceived > 100000) return 0.06;
+    return 0.05;
+}
+
+function get_subscription(int $companyId): array
+{
+    $stmt = db()->prepare('select * from subscriptions where company_id = ? limit 1');
+    $stmt->execute([$companyId]);
+    $sub = $stmt->fetch();
+    if (!$sub) {
+        db()->prepare("insert into subscriptions (company_id, plan, status, trial_ends_at) values (?, 'PROFISSIONAL', 'TRIAL', date_add(curdate(), interval 30 day))")->execute([$companyId]);
+        $stmt->execute([$companyId]);
+        $sub = $stmt->fetch();
+    }
+    return $sub;
+}
+
+function is_subscription_blocked(array $subscription): bool
+{
+    return in_array($subscription['status'], ['CANCELED', 'BLOCKED'], true);
+}
+
+function require_active_subscription(array $user, string $allowedPage = ''): void
+{
+    if ($user['role'] === 'SUPER_ADMIN') return;
+    $sub = get_subscription((int) $user['company_id']);
+    if (!is_subscription_blocked($sub)) return;
+    $allowed = ['/subscription.php', '/company-settings.php', '/logout.php'];
+    $current = strtok($_SERVER['REQUEST_URI'], '?');
+    if (in_array($current, $allowed, true)) return;
+    redirect('/subscription.php?blocked=1');
+}
+
+function advance_stage_validation(array $project): ?string
+{
+    $stage = $project['current_stage'];
+    if ($stage === 'PROJETO') {
+        if (empty($project['client_name']) || empty($project['client_phone']) || empty($project['project_name']) || empty($project['designer_id'])) {
+            return 'Preencha cliente, telefone, projeto e projetista responsável antes de avançar.';
+        }
+    }
+    if ($stage === 'NEGOCIACAO') {
+        if (empty($project['closed_value']) || empty($project['closing_date'])) {
+            return 'Informe valor fechado e data de fechamento antes de avançar.';
+        }
+    }
+    return null;
 }

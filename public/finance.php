@@ -3,9 +3,11 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
-if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)) {
+require_active_subscription($user);
+if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA', 'CONFERENTE'], true)) {
     redirect('/');
 }
+$canWriteFinance = in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true);
 
 $companyId = (int) $user['company_id'];
 $now = new DateTimeImmutable();
@@ -17,7 +19,7 @@ if ($user['role'] === 'PROJETISTA') {
 }
 [$start, $end] = month_range($year, $month);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance) {
     $saleId = (int) ($_POST['id'] ?? 0);
     $designerId = (int) ($_POST['designer_id'] ?? 0);
     if ($user['role'] === 'PROJETISTA') {
@@ -125,8 +127,8 @@ $totalSold = array_sum(array_map(fn($sale) => (float) $sale['sold_value'], $sale
 $totalReceived = array_sum(array_map(fn($payment) => (float) $payment['amount'], $payments));
 $commissionPercent = $totalReceived <= 100000 ? 5 : ($totalReceived <= 150000 ? 6 : 7);
 
-$commissionStmt = db()->prepare('select * from financial_commission_settings where company_id = ? and designer_id is null and month = ? and year = ? limit 1');
-$commissionStmt->execute([$companyId, $month, $year]);
+$commissionStmt = db()->prepare('select * from financial_commission_settings where company_id = ? and (designer_id = ? or (designer_id is null and ? = \'\')) and month = ? and year = ? limit 1');
+$commissionStmt->execute([$companyId, $designerFilter ?: null, $designerFilter, $month, $year]);
 $commission = $commissionStmt->fetch();
 if ($commission && (float) $commission['commission_percent'] > 0) {
     $commissionPercent = (float) $commission['commission_percent'];
@@ -176,17 +178,19 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <article class="rounded-lg border border-line bg-white p-4"><span class="text-sm text-slate-500">Valor comissão</span><strong class="mt-2 block text-2xl"><?= money_br($totalReceived * $commissionPercent / 100) ?></strong></article>
     </div>
 
-    <?php if ($user['role'] === 'ADMIN_EMPRESA'): ?>
+    <?php if ($canWriteFinance): ?>
         <form method="post" action="/commission-save.php" class="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 md:flex-row md:items-end">
             <input type="hidden" name="month" value="<?= $month ?>">
             <input type="hidden" name="year" value="<?= $year ?>">
-            <label class="grid gap-1 text-sm font-semibold">Comissão geral do mês (%)
+            <input type="hidden" name="designer_id" value="<?= e((string) $designerFilter) ?>">
+            <label class="grid gap-1 text-sm font-semibold">Comissão do mês (%) <?= $designerFilter ? '— projetista selecionado' : '— geral' ?>
                 <input class="min-h-10 rounded-md border border-line px-3" type="number" step="0.01" name="commission_percent" value="<?= e((string) $commissionPercent) ?>">
             </label>
             <button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white" type="submit">Salvar comissão</button>
         </form>
     <?php endif; ?>
 
+    <?php if ($canWriteFinance): ?>
     <form method="post" class="grid gap-4 rounded-lg border border-line bg-white p-4">
         <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
         <h2 class="font-bold"><?= $edit ? 'Editar venda' : 'Nova venda' ?></h2>
@@ -242,13 +246,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <textarea class="min-h-20 rounded-md border border-line px-3 py-2" name="notes" placeholder="Observações"><?= e($edit['notes'] ?? '') ?></textarea>
         <div class="flex justify-end"><button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white" type="submit">Salvar venda</button></div>
     </form>
+    <?php endif; ?>
 
     <section class="overflow-hidden rounded-lg border border-line bg-white">
         <div class="border-b border-line p-4 font-bold">Tabela de vendas</div>
         <div class="overflow-x-auto">
             <table class="w-full min-w-[1100px] text-left text-sm">
                 <thead class="bg-fog text-xs uppercase text-slate-500">
-                    <tr><th class="p-3">Cliente</th><th class="p-3">Projeto</th><th class="p-3">Projetista</th><th class="p-3">Valor vendido</th><th class="p-3">Forma</th><th class="p-3">Data</th><th class="p-3">Recebido</th><th class="p-3">Em aberto</th><th class="p-3">Status</th><th class="p-3 text-right">Ações</th></tr>
+                    <tr><th class="p-3">Cliente</th><th class="p-3">Projeto</th><th class="p-3">Projetista</th><th class="p-3">Valor vendido</th><th class="p-3">Forma</th><th class="p-3">Data</th><th class="p-3">Recebido</th><th class="p-3">Em aberto</th><th class="p-3">Status</th><?php if ($canWriteFinance): ?><th class="p-3 text-right">Ações</th><?php endif; ?></tr>
                 </thead>
                 <tbody>
                     <?php if (!$sales): ?><tr><td colspan="10" class="p-8 text-center text-slate-500">Nenhuma venda</td></tr><?php endif; ?>
@@ -264,10 +269,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3"><?= money_br($sale['received']) ?></td>
                             <td class="p-3"><?= money_br(max(0, $sale['sold_value'] - $sale['received'])) ?></td>
                             <td class="p-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold <?= $status === 'Pago' ? 'bg-emerald-100 text-emerald-700' : ($status === 'Parcial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700') ?>"><?= $status ?></span></td>
+                            <?php if ($canWriteFinance): ?>
                             <td class="p-3 text-right">
                                 <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e((string) $designerFilter) ?>&edit=<?= (int) $sale['id'] ?>">Editar</a>
+                                <?php if ($user['role'] === 'ADMIN_EMPRESA'): ?>
                                 <a class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e((string) $designerFilter) ?>&delete=<?= (int) $sale['id'] ?>" onclick="return confirm('Excluir venda de <?= e($sale['client_name']) ?>?')">Excluir</a>
+                                <?php endif; ?>
                             </td>
+                            <?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

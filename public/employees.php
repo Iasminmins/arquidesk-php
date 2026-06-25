@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+require_active_subscription($user);
 if ($user['role'] !== 'ADMIN_EMPRESA') {
     http_response_code(403);
     exit('Acesso restrito ao administrador da empresa.');
@@ -10,6 +11,8 @@ if ($user['role'] !== 'ADMIN_EMPRESA') {
 
 $companyId = (int) $user['company_id'];
 $error = '';
+$subscription = get_subscription($companyId);
+$userLimit = plan_user_limit($subscription['plan']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
@@ -17,7 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] ?? 'PROJETISTA';
 
-    if ($name && $email && strlen($password) >= 6) {
+    $countStmt = db()->prepare('select count(*) from users where company_id = ?');
+    $countStmt->execute([$companyId]);
+    $currentCount = (int) $countStmt->fetchColumn();
+
+    if ($currentCount >= $userLimit) {
+        $error = "Seu plano atual permite até {$userLimit} usuários. Para adicionar mais pessoas, faça upgrade do plano.";
+    } elseif ($name && $email && strlen($password) >= 6) {
         $stmt = db()->prepare('insert into users (company_id, name, email, password_hash, role) values (?, ?, ?, ?, ?)');
         try {
             $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
@@ -39,6 +48,9 @@ require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
 ?>
 <section class="grid gap-5">
+    <div class="rounded-lg border border-line bg-white p-4 text-sm text-slate-500">
+        Plano atual: <strong class="text-ink"><?= e(plan_label($subscription['plan'])) ?></strong> · Usuários: <strong class="text-ink"><?= count($employees) ?>/<?= $userLimit ?></strong>
+    </div>
     <?php if (!empty($_GET['ok'])): ?><div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Operacao concluida.</div><?php endif; ?>
     <?php if ($error): ?><div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div><?php endif; ?>
 

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+require_active_subscription($user);
 $companyId = (int) $user['company_id'];
 $mode = $_GET['mode'] ?? match ($user['role']) {
     'PROJETISTA' => 'my-goal',

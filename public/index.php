@@ -124,18 +124,29 @@ if (!$user) {
                 <div class="mx-auto max-w-3xl text-center">
                     <h2 class="text-3xl font-black">Escolha o plano de acordo com o tamanho da sua equipe.</h2>
                     <p class="mt-3 text-ink/70">Todos os planos incluem a plataforma completa.</p>
+                    <p class="mt-2 text-sm font-bold text-emerald-700">1 mês grátis para começar.</p>
                 </div>
+                <?php $allPlans = plan_config(); $features = plan_included_features(); ?>
                 <div class="mt-8 grid gap-4 lg:grid-cols-3">
-                    <?php foreach ([['Start', 'R$ 149/mês', 'Até 3 usuários'], ['Profissional', 'R$ 297/mês', 'Até 8 usuários'], ['Business', 'R$ 497/mês', 'Até 15 usuários']] as $plan): ?>
-                        <article class="rounded-lg border border-line bg-white p-6 shadow-sm">
-                            <h3 class="text-xl font-black"><?= e($plan[0]) ?></h3>
-                            <p class="mt-4 text-3xl font-black"><?= e($plan[1]) ?></p>
-                            <p class="mt-2 text-sm font-bold text-emerald-900"><?= e($plan[2]) ?></p>
-                            <div class="mt-5 rounded-md bg-fog p-3 text-sm font-bold">Todas as funcionalidades incluídas</div>
-                            <a href="/setup.php" class="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-ink px-4 font-bold text-white">Começar com 1 mês grátis</a>
+                    <?php foreach ($allPlans as $planKey => $plan): ?>
+                        <article class="relative rounded-lg border bg-white p-6 shadow-sm <?= $plan['highlighted'] ? 'border-emerald-600 ring-2 ring-emerald-600/20' : 'border-line' ?>">
+                            <?php if ($plan['badge']): ?>
+                                <span class="absolute right-4 top-4 rounded-full bg-orange-500 px-3 py-1 text-xs font-black text-white"><?= e($plan['badge']) ?></span>
+                            <?php endif; ?>
+                            <h3 class="text-xl font-black"><?= e($plan['name']) ?></h3>
+                            <p class="mt-3 text-3xl font-black"><?= e($plan['priceLabel']) ?></p>
+                            <p class="mt-2 text-sm font-bold text-emerald-700"><?= e($plan['users']) ?></p>
+                            <p class="mt-3 text-sm text-ink/65"><?= e($plan['description']) ?></p>
+                            <ul class="mt-5 grid gap-2 text-sm text-ink/70">
+                                <?php foreach ($features as $feature): ?>
+                                    <li class="flex gap-2"><span class="mt-0.5 shrink-0 text-emerald-600">✓</span> <?= e($feature) ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                            <a href="/setup.php?plan=<?= e($planKey) ?>" class="mt-5 flex min-h-11 w-full items-center justify-center rounded-md px-4 font-bold <?= $plan['highlighted'] ? 'bg-ink text-white' : 'border border-line hover:bg-fog' ?>">Começar com 1 mês grátis</a>
                         </article>
                     <?php endforeach; ?>
                 </div>
+                <p class="mt-6 text-center text-sm text-ink/60"><strong class="text-ink">Usuários adicionais:</strong> R$ 49/mês por usuário. Todas as funcionalidades continuam liberadas.</p>
             </div>
         </section>
     </main>
@@ -146,6 +157,7 @@ if (!$user) {
 }
 
 $pageTitle = 'Dashboard';
+require_active_subscription($user);
 
 $companyId = (int) $user['company_id'];
 $period = $_GET['period'] ?? 'month';
@@ -173,42 +185,51 @@ if ($period === 'today') {
     $periodLabel = 'mês';
 }
 
-$stageStmt = db()->prepare(
-    "select current_stage, count(*) as total
-     from client_projects
-     where company_id = ? and date(updated_at) between ? and ?
-     group by current_stage"
-);
-$stageStmt->execute([$companyId, $periodStart, $periodEnd]);
+$projectSql = "select current_stage, count(*) as total from client_projects where company_id = ? and date(updated_at) between ? and ?";
+$projectParams = [$companyId, $periodStart, $periodEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $projectSql .= " and designer_id = ?";
+    $projectParams[] = (int) $user['id'];
+}
+$projectSql .= " group by current_stage";
+$stageStmt = db()->prepare($projectSql);
+$stageStmt->execute($projectParams);
 $stageCounts = [];
 foreach ($stageStmt->fetchAll() as $row) {
     $stageCounts[$row['current_stage']] = (int) $row['total'];
 }
-
 $totalProjects = array_sum($stageCounts);
 
-$salesStmt = db()->prepare(
-    "select coalesce(sum(sold_value), 0) as total_sold
-     from financial_sales
-     where company_id = ? and sale_date between ? and ?"
-);
-$salesStmt->execute([$companyId, $periodStart, $periodEnd]);
+$salesSql = "select coalesce(sum(sold_value), 0) from financial_sales where company_id = ? and sale_date between ? and ?";
+$salesParams = [$companyId, $periodStart, $periodEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $salesSql .= " and designer_id = ?";
+    $salesParams[] = (int) $user['id'];
+}
+$salesStmt = db()->prepare($salesSql);
+$salesStmt->execute($salesParams);
 $totalSold = (float) $salesStmt->fetchColumn();
 
-$paymentsStmt = db()->prepare('select coalesce(sum(amount), 0) from financial_payments where company_id = ? and payment_date between ? and ?');
-$paymentsStmt->execute([$companyId, $periodStart, $periodEnd]);
+$paymentsSql = "select coalesce(sum(fp.amount), 0) from financial_payments fp join financial_sales fs on fs.id = fp.financial_sale_id where fp.company_id = ? and fp.payment_date between ? and ?";
+$paymentsParams = [$companyId, $periodStart, $periodEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $paymentsSql .= " and fs.designer_id = ?";
+    $paymentsParams[] = (int) $user['id'];
+}
+$paymentsStmt = db()->prepare($paymentsSql);
+$paymentsStmt->execute($paymentsParams);
 $totalReceived = (float) $paymentsStmt->fetchColumn();
-$commissionRate = $totalReceived >= 200000 ? 0.08 : ($totalReceived >= 100000 ? 0.06 : 0.04);
+$commissionRate = commission_rate($totalReceived);
 
-$recentStmt = db()->prepare(
-    "select p.*, u.name as designer_name
-     from client_projects p
-     left join users u on u.id = p.designer_id
-     where p.company_id = ? and date(p.updated_at) between ? and ?
-     order by p.updated_at desc, p.created_at desc
-     limit 6"
-);
-$recentStmt->execute([$companyId, $periodStart, $periodEnd]);
+$recentSql = "select p.*, u.name as designer_name from client_projects p left join users u on u.id = p.designer_id where p.company_id = ? and date(p.updated_at) between ? and ?";
+$recentParams = [$companyId, $periodStart, $periodEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $recentSql .= " and p.designer_id = ?";
+    $recentParams[] = (int) $user['id'];
+}
+$recentSql .= " order by p.updated_at desc, p.created_at desc limit 6";
+$recentStmt = db()->prepare($recentSql);
+$recentStmt->execute($recentParams);
 $recentProjects = $recentStmt->fetchAll();
 
 require __DIR__ . '/../app/includes/header.php';
@@ -238,23 +259,59 @@ require __DIR__ . '/../app/includes/sidebar.php';
     </form>
 
     <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <article class="rounded-lg border border-line bg-white p-4">
-            <span class="text-sm text-slate-500">Projetos em andamento no <?= e($periodLabel) ?></span>
-            <strong class="mt-2 block text-3xl"><?= max(0, $totalProjects - ($stageCounts['FINALIZADO'] ?? 0)) ?></strong>
-        </article>
-        <article class="rounded-lg border border-line bg-white p-4">
-            <span class="text-sm text-slate-500">Total de venda no <?= e($periodLabel) ?></span>
-            <strong class="mt-2 block text-3xl"><?= money_br($totalSold) ?></strong>
-        </article>
-        <article class="rounded-lg border border-line bg-white p-4">
-            <span class="text-sm text-slate-500">Total que entrou no <?= e($periodLabel) ?></span>
-            <strong class="mt-2 block text-3xl"><?= money_br($totalReceived) ?></strong>
-        </article>
-        <article class="rounded-lg border border-line bg-white p-4">
-            <span class="text-sm text-slate-500">Valor da comissão no <?= e($periodLabel) ?></span>
-            <strong class="mt-2 block text-3xl"><?= money_br($totalReceived * $commissionRate) ?></strong>
-            <span class="mt-1 block text-xs text-slate-500"><?= (int) ($commissionRate * 100) ?>% aplicado</span>
-        </article>
+        <?php if ($user['role'] === 'ADMIN_EMPRESA'): ?>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Projetos em andamento no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= max(0, $totalProjects - ($stageCounts['FINALIZADO'] ?? 0)) ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Total de venda no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= money_br($totalSold) ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Total que entrou no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= money_br($totalReceived) ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Valor da comissão no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= money_br($totalReceived * $commissionRate) ?></strong>
+                <span class="mt-1 block text-xs text-slate-500"><?= (int) ($commissionRate * 100) ?>% aplicado</span>
+            </article>
+        <?php elseif ($user['role'] === 'PROJETISTA'): ?>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Meus projetos no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= $totalProjects ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Minhas negociações no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= $stageCounts['NEGOCIACAO'] ?? 0 ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Meu total fechado no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= money_br($totalSold) ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Meu percentual atingido</span>
+                <strong class="mt-2 block text-3xl"><a href="/goals.php?mode=my-goal" class="underline hover:no-underline">Ver Minha Meta</a></strong>
+            </article>
+        <?php else: ?>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Conferências pendentes no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= $stageCounts['CONFERENCIA'] ?? 0 ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Itens em montagem no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= $stageCounts['MONTAGEM'] ?? 0 ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Assistências abertas no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= $stageCounts['ASSISTENCIA'] ?? 0 ?></strong>
+            </article>
+            <article class="rounded-lg border border-line bg-white p-4">
+                <span class="text-sm text-slate-500">Prazos importantes no <?= e($periodLabel) ?></span>
+                <strong class="mt-2 block text-3xl"><?= count(array_filter($recentProjects, fn($p) => !empty($p['billing_date']) || !empty($p['assembly_finished_date']))) ?></strong>
+            </article>
+        <?php endif; ?>
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[1fr_380px]">

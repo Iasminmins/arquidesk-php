@@ -24,8 +24,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$hasUsers) {
         $stmt = $pdo->prepare('insert into users (company_id, name, email, password_hash, role) values (?, ?, ?, ?, ?)');
         $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), 'ADMIN_EMPRESA']);
 
-        $stmt = $pdo->prepare('insert into subscriptions (company_id, plan, status, trial_ends_at) values (?, ?, ?, date_add(curdate(), interval 14 day))');
-        $stmt->execute([$companyId, 'PROFISSIONAL', 'TRIAL']);
+        $selectedPlan = $_POST['selected_plan'] ?? 'PROFISSIONAL';
+        $validPlans = ['START', 'PROFISSIONAL', 'PREMIUM'];
+        if (!in_array($selectedPlan, $validPlans, true)) $selectedPlan = 'PROFISSIONAL';
+
+        $stmt = $pdo->prepare('insert into subscriptions (company_id, plan, status, trial_ends_at, selected_plan_key) values (?, ?, ?, date_add(curdate(), interval 30 day), ?)');
+        $stmt->execute([$companyId, $selectedPlan, 'TRIAL', $selectedPlan]);
         $pdo->commit();
 
         $success = 'Administrador criado. Já pode entrar no sistema.';
@@ -67,6 +71,19 @@ require __DIR__ . '/../app/includes/header.php';
                     <a class="mt-5 inline-flex min-h-10 items-center rounded-md bg-ink px-4 font-bold text-white" href="/login.php">Entrar agora</a>
                 <?php else: ?>
                     <form method="post" class="mt-6 grid gap-4">
+                        <?php
+                        $planFromUrl = $_GET['plan'] ?? '';
+                        $planLabel = '';
+                        if ($planFromUrl && isset(plan_config()[$planFromUrl])) {
+                            $planLabel = plan_config()[$planFromUrl]['name'];
+                        }
+                        ?>
+                        <input type="hidden" name="selected_plan" value="<?= e($planFromUrl ?: 'PROFISSIONAL') ?>">
+                        <?php if ($planLabel): ?>
+                            <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                Plano selecionado: <strong><?= e($planLabel) ?></strong> · 1 mês grátis
+                            </div>
+                        <?php endif; ?>
                         <label class="grid gap-1 text-sm font-semibold">Nome
                             <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
                         </label>

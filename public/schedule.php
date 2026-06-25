@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+require_active_subscription($user);
 $companyId = (int) $user['company_id'];
 $today = new DateTimeImmutable('today');
 $month = max(1, min(12, (int) ($_GET['month'] ?? $today->format('n'))));

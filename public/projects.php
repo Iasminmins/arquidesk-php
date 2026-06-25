@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+require_active_subscription($user);
 $stage = $_GET['stage'] ?? 'PROJETO';
 $allowedStages = ['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'];
 if (!in_array($stage, $allowedStages, true)) {
@@ -110,7 +111,10 @@ require __DIR__ . '/../app/includes/sidebar.php';
 ?>
 <section class="grid gap-4">
     <?php if (!empty($_GET['ok'])): ?>
-        <div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Operação concluída com sucesso.</div>
+        <div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"><?= e($_GET['msg'] ?? 'Operação concluída com sucesso.') ?></div>
+    <?php endif; ?>
+    <?php if (!empty($_GET['error'])): ?>
+        <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($_GET['error']) ?></div>
     <?php endif; ?>
 
     <div class="flex flex-col gap-3 md:flex-row md:items-center">

@@ -14,6 +14,11 @@ if (!$project) {
     redirect('/');
 }
 
+$validationError = advance_stage_validation($project);
+if ($validationError) {
+    redirect('/projects.php?stage=' . urlencode($project['current_stage']) . '&error=' . urlencode($validationError));
+}
+
 $toStage = next_stage($project['current_stage']);
 if (!$toStage) {
     redirect('/projects.php?stage=' . urlencode($project['current_stage']));
@@ -24,7 +29,16 @@ $finishedAt = $toStage === 'FINALIZADO' ? date('Y-m-d H:i:s') : null;
 $update = db()->prepare('update client_projects set current_stage = ?, finished_at = coalesce(?, finished_at) where id = ? and company_id = ?');
 $update->execute([$toStage, $finishedAt, $id, $companyId]);
 
-$history = db()->prepare('insert into flow_history (company_id, client_project_id, from_stage, to_stage, action, user_id) values (?, ?, ?, ?, ?, ?)');
-$history->execute([$companyId, $id, $project['current_stage'], $toStage, 'Projeto avancado', (int) $user['id']]);
+$stageMessages = [
+    'PROJETO' => 'Projeto enviado para Negociação com sucesso.',
+    'NEGOCIACAO' => 'Negociação enviada para Conferência com sucesso.',
+    'CONFERENCIA' => 'Conferência enviada para Montagem com sucesso.',
+    'MONTAGEM' => 'Montagem enviada para Assistência com sucesso.',
+    'ASSISTENCIA' => 'Assistência enviada para Finalizados com sucesso.',
+];
+$msg = $stageMessages[$project['current_stage']] ?? 'Movimentação concluída com sucesso.';
 
-redirect('/projects.php?stage=' . urlencode($toStage) . '&ok=1');
+$history = db()->prepare('insert into flow_history (company_id, client_project_id, from_stage, to_stage, action, user_id) values (?, ?, ?, ?, ?, ?)');
+$history->execute([$companyId, $id, $project['current_stage'], $toStage, 'Enviado para ' . stage_label($toStage), (int) $user['id']]);
+
+redirect('/projects.php?stage=' . urlencode($toStage) . '&ok=1&msg=' . urlencode($msg));

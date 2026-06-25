@@ -181,3 +181,27 @@ create table if not exists export_logs (
   constraint export_company_fk foreign key (company_id) references companies(id) on delete cascade,
   constraint export_user_fk foreign key (created_by_user_id) references users(id) on delete set null
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+
+create table if not exists future_clients (
+  id int unsigned auto_increment primary key,
+  company_id int unsigned not null,
+  designer_id int unsigned null,
+  name varchar(160) not null,
+  phone varchar(40) not null,
+  email varchar(160) null,
+  address varchar(255) null,
+  interest varchar(255) null,
+  estimated_value decimal(14,2) null,
+  contact_date date null,
+  next_contact_date date null,
+  source varchar(80) null,
+  status enum('NOVO','EM_CONTATO','NEGOCIANDO','AGUARDANDO','CONVERTIDO','PERDIDO') not null default 'NOVO',
+  notes text null,
+  converted_project_id int unsigned null,
+  created_at timestamp not null default current_timestamp,
+  updated_at timestamp null default null on update current_timestamp,
+  constraint fc_company_fk foreign key (company_id) references companies(id) on delete cascade,
+  constraint fc_designer_fk foreign key (designer_id) references users(id) on delete set null,
+  constraint fc_project_fk foreign key (converted_project_id) references client_projects(id) on delete set null,
+  index fc_company_status_idx (company_id, status)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
