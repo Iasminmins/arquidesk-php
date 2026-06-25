@@ -86,26 +86,28 @@ for ($i = 0; $i < 42; $i++) {
     ];
 }
 
+$selectedDate = $_GET['date'] ?? '';
+
 $pageTitle = 'Agendamentos';
 require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
+$prevMonth = $month - 1; $prevYear = $year;
+if ($prevMonth < 1) { $prevMonth = 12; $prevYear--; }
+$nextMonth = $month + 1; $nextYear = $year;
+if ($nextMonth > 12) { $nextMonth = 1; $nextYear++; }
 ?>
 <section class="grid gap-5">
-    <form method="get" class="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 md:flex-row md:items-end">
-        <div class="mr-auto">
+    <div class="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 md:flex-row md:items-center md:justify-between">
+        <div>
             <h2 class="font-bold">Agenda do mês</h2>
-            <p class="mt-1 text-sm text-slate-500">Datas marcadas nos projetos aparecem aqui.</p>
+            <p class="mt-1 text-sm text-slate-500">Clique em um dia para ver os detalhes.</p>
         </div>
-        <label class="grid gap-1 text-sm font-semibold">
-            Mês
-            <input class="min-h-10 w-28 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" min="1" max="12" name="month" value="<?= $month ?>">
-        </label>
-        <label class="grid gap-1 text-sm font-semibold">
-            Ano
-            <input class="min-h-10 w-36 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" name="year" value="<?= $year ?>">
-        </label>
-        <button class="min-h-10 rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-fog" type="submit">Filtrar</button>
-    </form>
+        <div class="flex items-center gap-2">
+            <a class="grid h-10 w-10 place-items-center rounded-md border border-line hover:bg-fog" href="/schedule.php?month=<?= $prevMonth ?>&year=<?= $prevYear ?>">←</a>
+            <span class="min-w-[160px] text-center font-bold"><?= e($monthNames[$month]) ?> <?= $year ?></span>
+            <a class="grid h-10 w-10 place-items-center rounded-md border border-line hover:bg-fog" href="/schedule.php?month=<?= $nextMonth ?>&year=<?= $nextYear ?>">→</a>
+        </div>
+    </div>
 
     <div class="grid gap-4 xl:grid-cols-[360px_1fr]">
         <section class="rounded-lg border border-line bg-white p-4">
@@ -124,37 +126,71 @@ require __DIR__ . '/../app/includes/sidebar.php';
             </div>
         </section>
 
-        <section class="overflow-hidden rounded-lg border border-line bg-white">
+        <section class="rounded-lg border border-line bg-white">
             <div class="flex items-center justify-between border-b border-line p-4">
                 <h3 class="font-bold"><?= e($monthNames[$month]) ?> de <?= (int) $year ?></h3>
                 <span class="text-sm text-slate-500"><?= count($items) ?> agendamento<?= count($items) === 1 ? '' : 's' ?></span>
             </div>
             <div class="p-4">
-                <div class="mx-auto max-w-[580px]">
+                <div class="mx-auto max-w-[460px]">
                     <div class="mb-2 grid grid-cols-7 text-center text-xs font-bold uppercase text-slate-500">
-                        <span class="py-2">D</span>
-                        <span class="py-2">S</span>
-                        <span class="py-2">T</span>
-                        <span class="py-2">Q</span>
-                        <span class="py-2">Q</span>
-                        <span class="py-2">S</span>
-                        <span class="py-2">S</span>
+                        <span class="py-2">D</span><span class="py-2">S</span><span class="py-2">T</span><span class="py-2">Q</span><span class="py-2">Q</span><span class="py-2">S</span><span class="py-2">S</span>
                     </div>
-                    <div class="grid grid-cols-7 gap-1.5">
-                        <?php foreach ($calendarDays as $day): ?>
-                            <div class="relative grid aspect-square place-items-center rounded-md border text-sm font-semibold <?= $day['in_month'] ? 'border-line bg-white text-ink' : 'border-transparent bg-fog/50 text-slate-300' ?>">
-                                <span class="grid h-11 w-11 place-items-center rounded-full <?= $day['is_today'] ? 'bg-ink text-white' : '' ?>">
+                    <div class="grid grid-cols-7 gap-1">
+                        <?php foreach ($calendarDays as $day):
+                            $hasItems = (bool) $day['items'];
+                            $isSelected = $selectedDate === $day['key'];
+                        ?>
+                            <a href="/schedule.php?month=<?= $month ?>&year=<?= $year ?>&date=<?= e($day['key']) ?>" class="relative grid aspect-square place-items-center rounded-md border text-sm font-semibold transition hover:border-emerald-700 hover:bg-fog <?= $day['in_month'] ? 'border-line bg-white text-ink' : 'border-transparent bg-fog/50 text-slate-300' ?>">
+                                <span class="grid h-9 w-9 place-items-center rounded-full <?= $day['is_today'] ? 'bg-ink text-white' : '' ?>">
                                     <?= (int) $day['day'] ?>
                                 </span>
-                                <?php if ($day['items']): ?>
-                                    <span class="absolute bottom-2 h-1.5 w-1.5 rounded-full bg-emerald-900" title="<?= count($day['items']) ?> agendamento<?= count($day['items']) === 1 ? '' : 's' ?>"></span>
+                                <?php if ($hasItems): ?>
+                                    <span class="absolute bottom-1.5 h-1.5 w-1.5 rounded-full bg-emerald-700"></span>
                                 <?php endif; ?>
-                            </div>
+                            </a>
                         <?php endforeach; ?>
                     </div>
                 </div>
             </div>
         </section>
+
+        <?php if ($selectedDate): ?>
+        <div class="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onclick="if(event.target===this)location.href='/schedule.php?month=<?= $month ?>&year=<?= $year ?>'">
+            <section class="w-full max-w-2xl rounded-lg border border-line bg-white shadow-xl">
+                <div class="flex items-center justify-between border-b border-line p-4">
+                    <h3 class="font-bold">Agendamentos — <?= e(date_br($selectedDate)) ?></h3>
+                    <a href="/schedule.php?month=<?= $month ?>&year=<?= $year ?>" class="grid h-9 w-9 place-items-center rounded-md hover:bg-fog text-lg">✕</a>
+                </div>
+                <div class="max-h-[60vh] overflow-y-auto p-4">
+                    <?php $selectedItems = $grouped[$selectedDate] ?? []; ?>
+                    <?php if ($selectedItems): ?>
+                        <div class="grid gap-3">
+                            <?php foreach ($selectedItems as $item): ?>
+                                <article class="rounded-md border border-line p-4">
+                                    <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                        <div>
+                                            <strong><?= e($item['title']) ?></strong>
+                                            <span class="block text-sm text-slate-500"><?= e($item['project']['client_name']) ?> · <?= e($item['project']['project_name']) ?></span>
+                                        </div>
+                                        <span class="w-fit rounded bg-fog px-2 py-1 text-xs font-semibold text-slate-600"><?= e(stage_label($item['stage'])) ?></span>
+                                    </div>
+                                    <div class="mt-3 grid gap-1 text-sm text-slate-500 md:grid-cols-2">
+                                        <span>Projetista: <?= e($item['project']['designer_name'] ?: '-') ?></span>
+                                        <span>Etapa atual: <?= e(stage_label($item['project']['current_stage'])) ?></span>
+                                        <span>Cliente: <?= e($item['project']['client_name']) ?></span>
+                                        <span>Telefone: <?= e($item['project']['client_phone'] ?: '-') ?></span>
+                                    </div>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="rounded-md border border-line bg-fog p-4 text-sm text-slate-500">Nenhum agendamento marcado para este dia.</div>
+                    <?php endif; ?>
+                </div>
+            </section>
+        </div>
+        <?php endif; ?>
 
         <section class="overflow-hidden rounded-lg border border-line bg-white xl:col-start-2">
             <div class="border-b border-line p-4 font-bold">Lista por data</div>
