@@ -161,7 +161,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     <?php endif; ?>
                     <?php foreach ($projects as $project): ?>
                         <tr class="border-t border-line align-top">
-                            <td class="p-3"><strong><?= e($project['client_name']) ?></strong><span class="block text-xs text-slate-500"><?= e($project['client_phone']) ?></span></td>
+                            <td class="p-3"><strong><?= e($project['client_name']) ?></strong><span class="flex items-center gap-1 text-xs text-slate-500"><?= e($project['client_phone']) ?> <?= whatsapp_link($project['client_phone'] ?? '') ?></span></td>
                             <td class="p-3"><?= e($project['project_name']) ?></td>
                             <td class="p-3"><?= e($project['designer_name'] ?: '-') ?></td>
                             <td class="p-3">

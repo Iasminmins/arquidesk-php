@@ -273,7 +273,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                 <strong><?= e($fc['name']) ?></strong>
                                 <?php if ($fc['email']): ?><span class="block text-xs text-slate-500"><?= e($fc['email']) ?></span><?php endif; ?>
                             </td>
-                            <td class="p-3"><?= e($fc['phone']) ?></td>
+                            <td class="p-3"><span class="flex items-center gap-1"><?= e($fc['phone']) ?> <?= whatsapp_link($fc['phone']) ?></span></td>
                             <td class="p-3"><?= e($fc['interest'] ?: '-') ?></td>
                             <td class="p-3"><?= $fc['estimated_value'] ? money_br($fc['estimated_value']) : '-' ?></td>
                             <td class="p-3"><?= e($fc['source'] ?: '-') ?></td>

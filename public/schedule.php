@@ -183,7 +183,7 @@ if ($nextMonth > 12) { $nextMonth = 1; $nextYear++; }
                                         <span>Projetista: <?= e($item['project']['designer_name'] ?: '-') ?></span>
                                         <span>Etapa atual: <?= e(stage_label($item['project']['current_stage'])) ?></span>
                                         <span>Cliente: <?= e($item['project']['client_name']) ?></span>
-                                        <span>Telefone: <?= e($item['project']['client_phone'] ?: '-') ?></span>
+                                        <span>Telefone: <?= e($item['project']['client_phone'] ?: '-') ?> <?= whatsapp_link($item['project']['client_phone'] ?? '') ?></span>
                                     </div>
                                 </article>
                             <?php endforeach; ?>
