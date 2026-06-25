@@ -26,13 +26,44 @@ $errors = [];
 $importSuccess = '';
 $importType = $_POST['import_type'] ?? 'Completo';
 
-function val(array $row, string $key): string { return trim((string) ($row[$key] ?? '')); }
+function val(array $row, string $key): string {
+    // Try exact match first, then alternative names
+    $alts = [
+        'Cliente' => ['cliente', 'client_name', 'Nome do cliente'],
+        'Projeto' => ['projeto', 'project_name', 'Nome do projeto'],
+        'Projetista' => ['projetista', 'designer_name', 'Projetista responsavel'],
+        'Valor vendido' => ['valor', 'sold_value', 'valor_vendido'],
+        'Forma de pagamento' => ['forma', 'payment_method', 'forma_pagamento'],
+        'Data da venda' => ['data', 'sale_date', 'data_venda'],
+        'Observacoes' => ['observacoes', 'notes', 'obs'],
+        'Valor pago' => ['valor', 'amount', 'valor_pago'],
+        'Data de pagamento' => ['data', 'payment_date', 'data_pagamento'],
+        'Numero do pagamento' => ['numero', 'payment_number'],
+        'Nome do cliente' => ['cliente', 'client_name'],
+        'Telefone' => ['telefone', 'phone', 'client_phone'],
+        'Nome do projeto' => ['projeto', 'project_name'],
+        'Status' => ['status', 'project_status'],
+        'Data de entrada' => ['data', 'entry_date'],
+        'Projetista responsavel' => ['projetista', 'designer_name'],
+        'Etapa desejada' => ['etapa', 'current_stage'],
+    ];
+    if (isset($row[$key]) && trim((string) $row[$key]) !== '') return trim((string) $row[$key]);
+    foreach ($alts[$key] ?? [] as $alt) {
+        if (isset($row[$alt]) && trim((string) $row[$alt]) !== '') return trim((string) $row[$alt]);
+    }
+    return '';
+}
 function num(array $row, string $key): float {
-    $v = $row[$key] ?? 0;
+    $v = val($row, $key);
+    if ($v === '') $v = '0';
     if (is_numeric($v)) return (float) $v;
     return xlsx_number_value($v);
 }
-function dt(array $row, string $key): ?string { return xlsx_date_value($row[$key] ?? ''); }
+function dt(array $row, string $key): ?string {
+    $v = val($row, $key);
+    if ($v === '') return null;
+    return xlsx_date_value($v);
+}
 
 function build_designer_map(int $companyId): array {
     $stmt = db()->prepare("select id, name from users where company_id = ? and active = 1");
