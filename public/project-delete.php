@@ -3,6 +3,9 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+if (!can_delete_project($user)) {
+    redirect('/');
+}
 $companyId = (int) $user['company_id'];
 $id = (int) ($_POST['id'] ?? 0);
 

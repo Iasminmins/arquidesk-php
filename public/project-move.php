@@ -3,6 +3,9 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+if ($user['role'] === 'CONFERENTE') {
+    redirect('/');
+}
 $companyId = (int) $user['company_id'];
 $id = (int) ($_POST['id'] ?? 0);
 
