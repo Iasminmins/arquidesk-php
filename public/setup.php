@@ -81,19 +81,24 @@ require __DIR__ . '/../app/includes/header.php';
             <?php endif; ?>
 
             <form method="post" class="mt-6 grid gap-4">
-                <?php
-                $planFromUrl = $_GET['plan'] ?? '';
-                $planLabel = '';
-                if ($planFromUrl && isset(plan_config()[$planFromUrl])) {
-                    $planLabel = plan_config()[$planFromUrl]['name'];
-                }
-                ?>
-                <input type="hidden" name="selected_plan" value="<?= e($planFromUrl ?: 'PROFISSIONAL') ?>">
-                <?php if ($planLabel): ?>
-                    <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                        Plano selecionado: <strong><?= e($planLabel) ?></strong> · 1 mês grátis
+                <?php $allPlans = plan_config(); $planFromUrl = $_GET['plan'] ?? 'PROFISSIONAL'; ?>
+                <label class="grid gap-1 text-sm font-semibold">Plano
+                    <div class="grid gap-2">
+                        <?php foreach ($allPlans as $planKey => $plan): ?>
+                            <label class="flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 transition <?= $planFromUrl === $planKey ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500/20' : 'border-line hover:bg-fog' ?>">
+                                <input type="radio" name="selected_plan" value="<?= e($planKey) ?>" <?= $planFromUrl === $planKey ? 'checked' : '' ?> class="accent-emerald-600" onchange="this.closest('form').querySelectorAll('label > label').forEach(l=>l.className=l.className.replace(/border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500\/20/,'border-line hover:bg-fog'));this.closest('label').className=this.closest('label').className.replace('border-line hover:bg-fog','border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500/20')">
+                                <div class="flex-1">
+                                    <div class="flex items-center justify-between">
+                                        <strong><?= e($plan['name']) ?></strong>
+                                        <span class="font-bold"><?= e($plan['priceLabel']) ?></span>
+                                    </div>
+                                    <span class="text-xs text-slate-500"><?= e($plan['users']) ?> · <?= e($plan['description']) ?></span>
+                                </div>
+                                <?php if ($plan['badge']): ?><span class="rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white"><?= e($plan['badge']) ?></span><?php endif; ?>
+                            </label>
+                        <?php endforeach; ?>
                     </div>
-                <?php endif; ?>
+                </label>
                 <label class="grid gap-1 text-sm font-semibold">Nome
                     <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
                 </label>
