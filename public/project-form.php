@@ -77,6 +77,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <label class="grid gap-1 text-sm font-semibold">Data de entrada
                     <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="entry_date" value="<?= e($project['entry_date'] ?? date('Y-m-d')) ?>">
                 </label>
+                <label class="grid gap-1 text-sm font-semibold">Data de medição
+                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="measurement_date" value="<?= e($project['measurement_date'] ?? '') ?>">
+                </label>
                 <label class="grid gap-1 text-sm font-semibold">Data de apresentação
                     <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="presentation_date" value="<?= e($project['presentation_date'] ?? '') ?>">
                 </label>
