@@ -46,6 +46,7 @@ function val(array $row, string $key): string {
         'Data de entrada' => ['data', 'entry_date'],
         'Projetista responsavel' => ['projetista', 'designer_name'],
         'Etapa desejada' => ['etapa', 'current_stage'],
+        'Data de medicao' => ['data_medicao', 'measurement_date', 'Data de medição'],
     ];
     if (isset($row[$key]) && trim((string) $row[$key]) !== '') return trim((string) $row[$key]);
     foreach ($alts[$key] ?? [] as $alt) {
@@ -190,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
                 $dId = $isDesigner ? (int) $user['id'] : ($designerMap[$dName] ?? null);
                 $wStage = strtoupper(val($row, 'Etapa desejada'));
                 $stage = $stageMap[$wStage] ?? 'PROJETO';
-                $ins = db()->prepare('insert into client_projects (company_id, designer_id, client_name, client_address, client_phone, project_name, current_stage, project_status, entry_date, presentation_date, negotiation_status, new_proposal_value, closed_value, closing_date, conference_status, sent_to_factory_date, billing_date, assembly_status, assembly_started_date, assembly_finished_date, assistance_status, assistance_date, order_date, notes) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+                $ins = db()->prepare('insert into client_projects (company_id, designer_id, client_name, client_address, client_phone, project_name, current_stage, project_status, entry_date, presentation_date, negotiation_status, new_proposal_value, closed_value, closing_date, conference_status, measurement_date, sent_to_factory_date, billing_date, assembly_status, assembly_started_date, assembly_finished_date, assistance_status, assistance_date, order_date, notes) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
                 $ins->execute([
                     $companyId, $dId, $clientName,
                     val($row, 'Endereco do cliente') ?: null,
@@ -205,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
                     num($row, 'Valor fechado') ?: null,
                     dt($row, 'Data de fechamento'),
                     val($row, 'Status conferencia') ?: null,
+                    dt($row, 'Data de medicao'),
                     dt($row, 'Data envio fabrica'),
                     dt($row, 'Data faturamento'),
                     val($row, 'Status montagem') ?: null,
@@ -338,12 +340,15 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <div class="flex items-center justify-between">
                 <div>
                     <h3 class="text-lg font-bold">Importar</h3>
-                    <p class="mt-1 text-sm text-slate-500">Envie um arquivo XLSX ou CSV.</p>
+                    <p class="mt-1 text-sm text-slate-500">Envie um arquivo XLSX ou CSV usando o modelo oficial abaixo.</p>
                 </div>
                 <a class="inline-flex min-h-10 items-center gap-2 rounded-md border border-line px-4 text-sm font-semibold hover:bg-fog" href="/templates/modelo_importacao_projetos.csv" download>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Modelo CSV
                 </a>
+            </div>
+            <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Para importar corretamente, baixe e preencha o <strong>Modelo CSV</strong>. Planilhas fora desse padrão podem não ser lidas pelo sistema.
             </div>
             <form method="post" enctype="multipart/form-data" class="mt-5 grid gap-4">
                 <label class="grid gap-1 text-sm font-semibold">Tipo de importação
@@ -386,7 +391,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
 
         <section class="rounded-lg border border-line bg-white p-5">
             <h3 class="text-lg font-bold">Exportar</h3>
-            <p class="mt-1 text-sm text-slate-500">Baixe seus dados em formato CSV.</p>
+            <p class="mt-1 text-sm text-slate-500">Baixe seus dados em uma planilha Excel organizada.</p>
             <form method="get" action="/export.php" class="mt-5 grid gap-4">
                 <label class="grid gap-1 text-sm font-semibold">Tipo de dados
                     <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="type">
@@ -403,7 +408,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white hover:opacity-95" type="submit">
                     <span class="inline-flex items-center gap-2">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Baixar CSV
+                        Baixar Excel
                     </span>
                 </button>
             </form>

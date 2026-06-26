@@ -43,6 +43,7 @@ create table if not exists client_projects (
   closed_value decimal(14,2) null,
   closing_date date null,
   conference_status varchar(80) null,
+  measurement_date date null,
   sent_to_factory_date date null,
   billing_date date null,
   assembly_status varchar(80) null,

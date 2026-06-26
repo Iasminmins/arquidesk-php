@@ -117,7 +117,7 @@ function project_dates_for_stage(array $project, string $stage): array
     return match ($stage) {
         'PROJETO' => [['Entrada', $project['entry_date']], ['Apresentação', $project['presentation_date']]],
         'NEGOCIACAO' => [['Entrada', $project['entry_date']], ['Apresentação', $project['presentation_date']], ['Fechamento', $project['closing_date']]],
-        'CONFERENCIA' => [['Envio fábrica', $project['sent_to_factory_date']], ['Faturamento', $project['billing_date']]],
+        'CONFERENCIA' => [['Medição', $project['measurement_date']], ['Envio fábrica', $project['sent_to_factory_date']], ['Faturamento', $project['billing_date']]],
         'MONTAGEM' => [['Início montagem', $project['assembly_started_date']], ['Fim montagem', $project['assembly_finished_date']]],
         'ASSISTENCIA' => [['Pedido', $project['order_date']], ['Assistência', $project['assistance_date']]],
         default => [['Finalizado', $project['finished_at']]],

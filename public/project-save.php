@@ -54,6 +54,7 @@ $data = [
     'presentation_date' => posted_date('presentation_date', $existing['presentation_date'] ?? null),
     'closing_date' => posted_date('closing_date', $existing['closing_date'] ?? null),
     'conference_status' => posted_trim('conference_status', $existing['conference_status'] ?? ''),
+    'measurement_date' => posted_date('measurement_date', $existing['measurement_date'] ?? null),
     'sent_to_factory_date' => posted_date('sent_to_factory_date', $existing['sent_to_factory_date'] ?? null),
     'billing_date' => posted_date('billing_date', $existing['billing_date'] ?? null),
     'assembly_status' => posted_trim('assembly_status', $existing['assembly_status'] ?? ''),
@@ -70,7 +71,7 @@ if ($id) {
         'update client_projects
          set designer_id = ?, client_name = ?, client_address = ?, client_phone = ?, project_name = ?,
              project_status = ?, negotiation_status = ?, new_proposal_value = ?, closed_value = ?, entry_date = ?, presentation_date = ?,
-             closing_date = ?, conference_status = ?, sent_to_factory_date = ?, billing_date = ?,
+             closing_date = ?, conference_status = ?, measurement_date = ?, sent_to_factory_date = ?, billing_date = ?,
              assembly_status = ?, assembly_started_date = ?, assembly_finished_date = ?,
              assistance_status = ?, order_date = ?, assistance_date = ?, notes = ?
          where id = ? and company_id = ?'
@@ -89,6 +90,7 @@ if ($id) {
         $data['presentation_date'],
         $data['closing_date'],
         $data['conference_status'],
+        $data['measurement_date'],
         $data['sent_to_factory_date'],
         $data['billing_date'],
         $data['assembly_status'],
@@ -106,9 +108,9 @@ if ($id) {
         'insert into client_projects
          (company_id, designer_id, client_name, client_address, client_phone, project_name, current_stage,
           project_status, negotiation_status, new_proposal_value, closed_value, entry_date, presentation_date, closing_date,
-          conference_status, sent_to_factory_date, billing_date, assembly_status, assembly_started_date,
+          conference_status, measurement_date, sent_to_factory_date, billing_date, assembly_status, assembly_started_date,
           assembly_finished_date, assistance_status, order_date, assistance_date, notes)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $companyId,
@@ -126,6 +128,7 @@ if ($id) {
         $data['presentation_date'],
         $data['closing_date'],
         $data['conference_status'],
+        $data['measurement_date'],
         $data['sent_to_factory_date'],
         $data['billing_date'],
         $data['assembly_status'],

@@ -100,6 +100,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
                         <?php foreach ($statusOptions as $opt): ?><option value="<?= e($opt) ?>" <?= ($project['conference_status'] ?? 'Medição') === $opt ? 'selected' : '' ?>><?= e($opt) ?></option><?php endforeach; ?>
                     </select>
                 </label>
+                <label class="grid gap-1 text-sm font-semibold">Data de medição
+                    <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="measurement_date" value="<?= e($project['measurement_date'] ?? '') ?>">
+                </label>
                 <label class="grid gap-1 text-sm font-semibold">Data de envio para fábrica
                     <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="sent_to_factory_date" value="<?= e($project['sent_to_factory_date'] ?? '') ?>">
                 </label>

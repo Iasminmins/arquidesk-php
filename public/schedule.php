@@ -28,6 +28,7 @@ $items = [];
 $fields = [
     'presentation_date' => ['Apresentação', 'PROJETO'],
     'closing_date' => ['Fechamento', 'NEGOCIACAO'],
+    'measurement_date' => ['Medição', 'CONFERENCIA'],
     'sent_to_factory_date' => ['Envio para fábrica', 'CONFERENCIA'],
     'billing_date' => ['Faturamento', 'CONFERENCIA'],
     'assembly_started_date' => ['Início da montagem', 'MONTAGEM'],
