@@ -385,6 +385,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                     <div class="flex flex-wrap justify-end gap-2">
                                         <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" href="/super-admin.php?view=company&company_id=<?= (int) $company['id'] ?>">Detalhes</a>
                                         <form method="post">
+                                            <?= csrf_field() ?>
                                             <input type="hidden" name="action" value="set_subscription_status">
                                             <input type="hidden" name="company_id" value="<?= (int) $company['id'] ?>">
                                             <?php if (in_array($company['subscription_status'], ['BLOCKED', 'CANCELED'], true)): ?>
@@ -444,12 +445,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                             <td class="p-3">
                                                 <div class="flex flex-wrap justify-end gap-2">
                                                     <form method="post">
+                                                        <?= csrf_field() ?>
                                                         <input type="hidden" name="action" value="reset_password">
                                                         <input type="hidden" name="user_id" value="<?= (int) $item['id'] ?>">
                                                         <button class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" type="submit" onclick="return confirm('Gerar nova senha temporária para este usuário?')">Resetar senha</button>
                                                     </form>
                                                     <?php if ($item['role'] !== 'SUPER_ADMIN'): ?>
                                                         <form method="post">
+                                                            <?= csrf_field() ?>
                                                             <input type="hidden" name="action" value="toggle_user">
                                                             <input type="hidden" name="user_id" value="<?= (int) $item['id'] ?>">
                                                             <button class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" type="submit"><?= $item['active'] ? 'Desativar' : 'Ativar' ?></button>
@@ -496,6 +499,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
 
                 <aside class="grid gap-4 content-start">
                     <form method="post" class="grid gap-4 rounded-lg border border-line bg-white p-5">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="action" value="save_subscription">
                         <input type="hidden" name="company_id" value="<?= (int) $selectedCompany['id'] ?>">
                         <h3 class="font-bold">Assinatura</h3>

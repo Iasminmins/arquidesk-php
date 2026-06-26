@@ -61,6 +61,7 @@ require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
 ?>
 <form method="post" enctype="multipart/form-data" class="grid gap-5 rounded-lg border border-line bg-white p-4">
+    <?= csrf_field() ?>
     <?php if ($message): ?><div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"><?= e($message) ?></div><?php endif; ?>
     <div class="grid gap-4 md:grid-cols-2">
         <label class="grid gap-1 text-sm font-semibold">Nome da empresa

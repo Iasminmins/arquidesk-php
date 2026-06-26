@@ -81,6 +81,7 @@ require __DIR__ . '/../app/includes/header.php';
             <?php endif; ?>
 
             <form method="post" class="mt-6 grid gap-4">
+                <?= csrf_field() ?>
                 <?php $allPlans = plan_config(); $planFromUrl = $_GET['plan'] ?? 'PROFISSIONAL'; ?>
                 <label class="grid gap-1 text-sm font-semibold">Plano
                     <div class="grid gap-2">

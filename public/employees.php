@@ -80,6 +80,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
 
     <?php if ($editEmployee): ?>
     <form method="post" class="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 xl:grid-cols-[1fr_1fr_180px_180px_auto] xl:items-end">
+        <?= csrf_field() ?>
         <input type="hidden" name="edit_id" value="<?= (int) $editEmployee['id'] ?>">
         <label class="grid gap-1 text-sm font-semibold">Nome
             <input class="min-h-10 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" name="edit_name" required value="<?= e($editEmployee['name']) ?>">
@@ -105,6 +106,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?php endif; ?>
 
     <form method="post" class="grid gap-3 rounded-lg border border-line bg-white p-4 xl:grid-cols-[1fr_1fr_180px_180px_auto] xl:items-end">
+        <?= csrf_field() ?>
         <label class="grid gap-1 text-sm font-semibold">Nome
             <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="name" required>
         </label>
@@ -140,11 +142,13 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <div class="flex justify-end gap-2">
                                 <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" href="/employees.php?edit=<?= (int) $employee['id'] ?>">Editar</a>
                                 <form method="post" action="/employee-toggle.php">
+                                    <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $employee['id'] ?>">
                                     <button class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" type="submit"><?= $employee['active'] ? 'Desativar' : 'Ativar' ?></button>
                                 </form>
                                 <?php if ((int) $employee['id'] !== (int) $user['id']): ?>
                                     <form method="post" action="/employee-delete.php" onsubmit="return confirm('Excluir este funcionário?')">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= (int) $employee['id'] ?>">
                                         <button class="rounded-md bg-red-600 px-3 py-2 text-xs font-bold text-white" type="submit">Excluir</button>
                                     </form>

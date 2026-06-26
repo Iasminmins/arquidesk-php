@@ -191,6 +191,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                 <?php $field = status_field_for_stage($stage); ?>
                                 <?php if ($canEdit && $field): ?>
                                     <form method="post" action="/project-status.php">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
                                         <input type="hidden" name="stage" value="<?= e($stage) ?>">
                                         <input type="hidden" name="view" value="<?= e($view) ?>">
@@ -219,19 +220,33 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                     <a class="grid h-9 w-9 place-items-center rounded-md border border-line hover:bg-fog" href="/project-history.php?id=<?= (int) $project['id'] ?>" title="Histórico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></a>
                                     <?php if ($canDelete): ?>
                                         <form method="post" action="/project-delete.php" onsubmit="return confirm('Excluir este projeto?')">
+                                            <?= csrf_field() ?>
                                             <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
                                             <button class="grid h-9 w-9 place-items-center rounded-md border border-red-200 text-red-600 hover:bg-red-50" type="submit" title="Excluir"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                                         </form>
                                     <?php endif; ?>
                                     <?php if ($stage === 'NEGOCIACAO' && $project['current_stage'] === 'NEGOCIACAO' && ($project['negotiation_status'] ?? '') !== 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
-                                        <a class="rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50" href="/project-desistir.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Marcar como desistida?')">Desistir</a>
-                                        <a class="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" href="/project-to-future.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Enviar para Clientes Futuros?')">Futuro</a>
+                                        <form method="post" action="/project-desistir.php" onsubmit="return confirm('Marcar como desistida?')">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
+                                            <button class="rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50" type="submit">Desistir</button>
+                                        </form>
+                                        <form method="post" action="/project-to-future.php" onsubmit="return confirm('Enviar para Clientes Futuros?')">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
+                                            <button class="rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50" type="submit">Futuro</button>
+                                        </form>
                                     <?php endif; ?>
                                     <?php if ($stage === 'NEGOCIACAO' && ($project['negotiation_status'] ?? '') === 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
-                                        <a class="inline-flex h-9 items-center whitespace-nowrap rounded-md bg-ink px-3 text-xs font-bold text-white" href="/project-reativar.php?id=<?= (int) $project['id'] ?>" onclick="return confirm('Reativar esta negociação?')">Voltar para Negociação</a>
+                                        <form method="post" action="/project-reativar.php" onsubmit="return confirm('Reativar esta negociação?')">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
+                                            <button class="inline-flex h-9 items-center whitespace-nowrap rounded-md bg-ink px-3 text-xs font-bold text-white" type="submit">Voltar para Negociação</button>
+                                        </form>
                                     <?php elseif ($project['current_stage'] === $stage && next_stage($project['current_stage']) && $user['role'] !== 'CONFERENTE' && ($project['negotiation_status'] ?? '') !== 'Desistida'): ?>
                                         <?php $nextLabel = stage_label(next_stage($project['current_stage'])); ?>
                                         <form method="post" action="/project-move.php">
+                                            <?= csrf_field() ?>
                                             <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
                                             <button class="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-ink px-3 text-xs font-bold text-white" type="submit">Enviar para <?= e($nextLabel) ?></button>
                                         </form>

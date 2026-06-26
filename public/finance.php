@@ -15,6 +15,11 @@ if ($user['role'] === 'PROJETISTA') { $designerFilter = (string) $user['id']; }
 [$start, $end] = month_range($year, $month);
 
 // POST: save sale
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance && isset($_POST['delete_sale'])) {
+    db()->prepare('delete from financial_sales where id=? and company_id=?')->execute([(int) $_POST['delete_sale'], $companyId]);
+    redirect('/finance.php?month=' . $month . '&year=' . $year . '&designer_id=' . urlencode($designerFilter) . '&ok=1');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance && isset($_POST['save_sale'])) {
     $saleId = (int) ($_POST['id'] ?? 0);
     $designerId = (int) ($_POST['designer_id'] ?? 0);
@@ -39,11 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance && isset($_POST['s
     }
     redirect('/finance.php?month=' . $month . '&year=' . $year . '&designer_id=' . urlencode($designerFilter) . '&ok=1');
 }
-if (!empty($_GET['delete']) && $canWriteFinance) {
-    db()->prepare('delete from financial_sales where id=? and company_id=?')->execute([(int) $_GET['delete'], $companyId]);
-    redirect('/finance.php?month=' . $month . '&year=' . $year . '&designer_id=' . urlencode($designerFilter) . '&ok=1');
-}
-
 // Load edit data
 $edit = null; $editPayments = [];
 if (!empty($_GET['edit']) && $canWriteFinance) {
@@ -120,6 +120,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
         </form>
         <?php if ($canWriteFinance): ?>
         <form method="post" action="/commission-save.php" class="flex items-end gap-3">
+            <?= csrf_field() ?>
             <input type="hidden" name="month" value="<?= $month ?>"><input type="hidden" name="year" value="<?= $year ?>"><input type="hidden" name="designer_id" value="<?= e($designerFilter) ?>">
             <label class="grid gap-1 text-sm font-semibold">Comissão do mês (%)
                 <input class="min-h-10 w-24 rounded-md border border-line px-3" type="number" step="0.01" name="commission_percent" value="<?= e((string) $commissionPercent) ?>">
@@ -155,7 +156,11 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3 text-right">
                                 <div class="flex justify-end gap-2">
                                     <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e($designerFilter) ?>&edit=<?= (int) $sale['id'] ?>">Editar</a>
-                                    <a class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e($designerFilter) ?>&delete=<?= (int) $sale['id'] ?>" onclick="return confirm('Excluir?')">Excluir</a>
+                                    <form method="post" onsubmit="return confirm('Excluir?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="delete_sale" value="<?= (int) $sale['id'] ?>">
+                                        <button class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" type="submit">Excluir</button>
+                                    </form>
                                 </div>
                             </td>
                             <?php endif; ?>
@@ -189,6 +194,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <a href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e($designerFilter) ?>" class="grid h-9 w-9 place-items-center rounded-md hover:bg-fog text-lg">✕</a>
             </div>
             <form method="post" class="max-h-[75vh] overflow-y-auto p-5">
+                <?= csrf_field() ?>
                 <input type="hidden" name="save_sale" value="1">
                 <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
                 <div class="grid gap-4 md:grid-cols-2">

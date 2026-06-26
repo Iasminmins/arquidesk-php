@@ -80,6 +80,7 @@ require __DIR__ . '/../app/includes/header.php';
                 <a class="mt-5 inline-flex min-h-10 items-center rounded-md bg-ink px-4 font-bold text-white" href="/login.php">Voltar ao login</a>
             <?php else: ?>
                 <form method="post" class="mt-6 grid gap-4">
+                    <?= csrf_field() ?>
                     <label class="grid gap-1 text-sm font-semibold">E-mail
                         <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="email" name="email" required autofocus>
                     </label>

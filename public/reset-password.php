@@ -63,6 +63,7 @@ require __DIR__ . '/../app/includes/header.php';
             <?php elseif ($tokenValid): ?>
                 <p class="mt-2 text-sm text-slate-500">Olá <?= e($reset['name']) ?>, defina sua nova senha.</p>
                 <form method="post" class="mt-6 grid gap-4">
+                    <?= csrf_field() ?>
                     <input type="hidden" name="token" value="<?= e($token) ?>">
                     <label class="grid gap-1 text-sm font-semibold">Nova senha
                         <input class="min-h-11 rounded-md border border-line px-3 outline-none focus:border-ink" type="password" name="password" required minlength="6" autofocus>

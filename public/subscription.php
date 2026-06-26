@@ -102,6 +102,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
 
     <?php if ($user['role'] === 'SUPER_ADMIN'): ?>
         <form method="post" class="grid gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 md:grid-cols-3 md:items-end">
+            <?= csrf_field() ?>
             <label class="grid gap-1 text-sm font-semibold">Plano
                 <select class="min-h-10 rounded-md border border-line bg-white px-3" name="plan">
                     <?php foreach ($plans as $key => $plan): ?><option value="<?= e($key) ?>" <?= $currentPlan === $key ? 'selected' : '' ?>><?= e($plan['name']) ?></option><?php endforeach; ?>

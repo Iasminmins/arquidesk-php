@@ -30,6 +30,7 @@ require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
 ?>
 <form method="post" action="/project-save.php" class="grid gap-4">
+    <?= csrf_field() ?>
     <input type="hidden" name="id" value="<?= (int) ($project['id'] ?? 0) ?>">
     <input type="hidden" name="current_stage" value="<?= e($stage) ?>">
 

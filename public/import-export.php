@@ -351,6 +351,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 Para importar corretamente, baixe e preencha o <strong>Modelo CSV</strong>. Planilhas fora desse padrão podem não ser lidas pelo sistema.
             </div>
             <form method="post" enctype="multipart/form-data" class="mt-5 grid gap-4">
+                <?= csrf_field() ?>
                 <label class="grid gap-1 text-sm font-semibold">Tipo de importação
                     <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="import_type">
                         <option value="Completo" <?= $importType === 'Completo' ? 'selected' : '' ?>>Completo (todas as abas)</option>
@@ -380,6 +381,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     <?php endif; ?>
                 </div>
                 <form method="post" class="mt-4">
+                    <?= csrf_field() ?>
                     <input type="hidden" name="confirm_import" value="1">
                     <button class="min-h-10 w-full rounded-md bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-800" type="submit">
                         Confirmar importação (<?= array_sum(array_column($summary, 'count')) ?> registros)

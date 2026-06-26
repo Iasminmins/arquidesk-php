@@ -16,6 +16,11 @@ $year = (int) ($_GET['year'] ?? $now->format('Y'));
 [$start, $end] = month_range($year, $month);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['role'] === 'ADMIN_EMPRESA') {
+    if (isset($_POST['delete_goal'])) {
+        db()->prepare('delete from designer_goals where id = ? and company_id = ?')->execute([(int) $_POST['delete_goal'], $companyId]);
+        redirect('/goals.php?month=' . $month . '&year=' . $year . '&ok=1');
+    }
+
     $designerId = (int) ($_POST['designer_id'] ?? 0);
     $amount = (float) ($_POST['goal_amount'] ?? 0);
 
@@ -31,11 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $user['role'] === 'ADMIN_EMPRESA') 
         }
     }
 
-    redirect('/goals.php?month=' . $month . '&year=' . $year . '&ok=1');
-}
-
-if (!empty($_GET['delete']) && $user['role'] === 'ADMIN_EMPRESA') {
-    db()->prepare('delete from designer_goals where id = ? and company_id = ?')->execute([(int) $_GET['delete'], $companyId]);
     redirect('/goals.php?month=' . $month . '&year=' . $year . '&ok=1');
 }
 
@@ -168,6 +168,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?php else: ?>
         <?php if ($user['role'] === 'ADMIN_EMPRESA' && $mode === 'goals'): ?>
             <form method="post" class="grid gap-3 rounded-lg border border-line bg-white p-4 md:grid-cols-[1fr_180px_auto] md:items-end">
+                <?= csrf_field() ?>
                 <label class="grid gap-1 text-sm font-semibold">Projetista
                     <select class="min-h-10 rounded-md border border-line px-3" name="designer_id" required>
                         <option value="">Selecionar</option>
@@ -222,7 +223,11 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                 <?php if ($user['role'] === 'ADMIN_EMPRESA' && $mode === 'goals'): ?>
                                     <td class="p-3 text-right">
                                         <?php if ($row['goal_id']): ?>
-                                            <a class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" href="/goals.php?month=<?= $month ?>&year=<?= $year ?>&delete=<?= (int) $row['goal_id'] ?>" onclick="return confirm('Excluir meta?')">Excluir</a>
+                                            <form method="post" onsubmit="return confirm('Excluir meta?')">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="delete_goal" value="<?= (int) $row['goal_id'] ?>">
+                                                <button class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" type="submit">Excluir</button>
+                                            </form>
                                         <?php endif; ?>
                                     </td>
                                 <?php endif; ?>

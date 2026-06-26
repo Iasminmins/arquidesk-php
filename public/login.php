@@ -37,6 +37,7 @@ require __DIR__ . '/../app/includes/header.php';
     </section>
     <section class="flex items-center justify-center p-6">
         <form method="post" class="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-sm">
+            <?= csrf_field() ?>
             <div class="grid grid-cols-2 rounded-md border border-line bg-fog p-1 text-sm font-semibold">
                 <a class="rounded bg-white px-3 py-2 text-center text-ink shadow-sm" href="/login.php">Entrar</a>
                 <a class="rounded px-3 py-2 text-center text-ink/60" href="/setup.php">Cadastrar</a>

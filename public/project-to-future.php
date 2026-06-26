@@ -2,7 +2,8 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 $user = require_auth();
 if ($user['role'] === 'CONFERENTE') redirect('/');
-$id = (int) ($_GET['id'] ?? 0);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect('/projects.php?stage=NEGOCIACAO');
+$id = (int) ($_POST['id'] ?? 0);
 $companyId = (int) $user['company_id'];
 
 $stmt = db()->prepare('select * from client_projects where id = ? and company_id = ? limit 1');

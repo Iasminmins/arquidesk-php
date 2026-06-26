@@ -51,8 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save'])) {
 }
 
 // Convert to project
-if (!empty($_GET['convert'])) {
-    $fcId = (int) $_GET['convert'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['convert'])) {
+    $fcId = (int) $_POST['convert'];
     $fcStmt = db()->prepare('select * from future_clients where id = ? and company_id = ? and status != ? limit 1');
     $fcStmt->execute([$fcId, $companyId, 'CONVERTIDO']);
     $fc = $fcStmt->fetch();
@@ -83,8 +83,8 @@ if (!empty($_GET['convert'])) {
 }
 
 // Delete
-if (!empty($_GET['delete'])) {
-    db()->prepare('delete from future_clients where id = ? and company_id = ?')->execute([(int) $_GET['delete'], $companyId]);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['delete'])) {
+    db()->prepare('delete from future_clients where id = ? and company_id = ?')->execute([(int) $_POST['delete'], $companyId]);
     redirect('/future-clients.php?ok=1');
 }
 
@@ -176,6 +176,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <section class="rounded-lg border border-line bg-white p-5">
         <h3 class="text-lg font-bold"><?= $isNew ? 'Novo cliente futuro' : 'Editar cliente futuro' ?></h3>
         <form method="post" class="mt-4 grid gap-4">
+            <?= csrf_field() ?>
             <input type="hidden" name="save" value="1">
             <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -280,6 +281,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3">
                                 <?php if ($fc['status'] !== 'CONVERTIDO'): ?>
                                 <form method="post" class="inline">
+                                    <?= csrf_field() ?>
                                     <input type="hidden" name="update_status" value="1">
                                     <input type="hidden" name="fc_id" value="<?= (int) $fc['id'] ?>">
                                     <select class="min-h-8 rounded-md border border-line px-2 text-xs font-semibold <?= $statusColor ?>" name="new_status" onchange="this.form.submit()">
@@ -305,11 +307,19 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                 <div class="flex flex-wrap justify-end gap-2">
                                     <a class="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-fog" href="/future-clients.php?edit=<?= (int) $fc['id'] ?>">Editar</a>
                                     <?php if ($fc['status'] !== 'CONVERTIDO'): ?>
-                                        <a class="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800" href="/future-clients.php?convert=<?= (int) $fc['id'] ?>" onclick="return confirm('Converter <?= e($fc['name']) ?> em projeto?')">Converter em Projeto</a>
+                                        <form method="post" onsubmit="return confirm('Converter <?= e($fc['name']) ?> em projeto?')">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="convert" value="<?= (int) $fc['id'] ?>">
+                                            <button class="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800" type="submit">Converter em Projeto</button>
+                                        </form>
                                     <?php else: ?>
                                         <a class="rounded-md border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700" href="/projects.php?stage=PROJETO">Ver projeto</a>
                                     <?php endif; ?>
-                                    <a class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600" href="/future-clients.php?delete=<?= (int) $fc['id'] ?>" onclick="return confirm('Excluir <?= e($fc['name']) ?>?')">Excluir</a>
+                                    <form method="post" onsubmit="return confirm('Excluir <?= e($fc['name']) ?>?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="delete" value="<?= (int) $fc['id'] ?>">
+                                        <button class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600" type="submit">Excluir</button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>

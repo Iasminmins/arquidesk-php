@@ -12,6 +12,10 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/functions.php';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+}
+
 function current_user(): ?array
 {
     if (empty($_SESSION['user_id'])) {
