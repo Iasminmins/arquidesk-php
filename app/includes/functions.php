@@ -82,10 +82,8 @@ function role_nav(string $role): array
         'SUPER_ADMIN' => [
             '/super-admin.php' => 'Dashboard SaaS',
             '/super-admin.php?view=companies' => 'Empresas',
-            '/super-admin.php?view=plans' => 'Planos',
             '/super-admin.php?view=subscriptions' => 'Assinaturas',
             '/super-admin.php?view=users' => 'Usuários Globais',
-            '/super-admin.php?view=settings' => 'Configurações SaaS',
         ],
         default => [
             '/' => 'Dashboard',

@@ -40,8 +40,8 @@ $companyLogo = $companyStmt->fetchColumn() ?: '';
                 if ($isView) {
                     $active = $currentPath === $pathOnly && $currentView === $targetView;
                 }
-                if (!$isStage && $href !== '/') {
-                    $active = $currentPath === $pathOnly;
+                if (!$isStage && !$isView && $href !== '/') {
+                    $active = $currentPath === $pathOnly && ($currentPath !== '/super-admin.php' || $currentView === '');
                 }
                 ?>
                 <a class="rounded-md px-3 py-2 text-sm font-semibold <?= $active ? 'text-white' : 'text-slate-700 hover:bg-fog' ?>" <?= $active ? 'style="background:' . e($primaryColor) . '"' : '' ?> href="<?= e($href) ?>">
