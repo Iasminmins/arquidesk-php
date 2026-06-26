@@ -134,6 +134,20 @@ require __DIR__ . '/../app/includes/sidebar.php';
         </div>
     </section>
 
+    <?php if ($project && $stage !== 'NEGOCIACAO'): ?>
+    <section class="rounded-lg border border-line bg-white p-4">
+        <h2 class="font-bold">Dados da negociação</h2>
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+            <label class="grid gap-1 text-sm font-semibold">Valor fechado
+                <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="number" step="0.01" name="closed_value" value="<?= e((string) ($project['closed_value'] ?? '')) ?>">
+            </label>
+            <label class="grid gap-1 text-sm font-semibold">Data de fechamento
+                <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="closing_date" value="<?= e($project['closing_date'] ?? '') ?>">
+            </label>
+        </div>
+    </section>
+    <?php endif; ?>
+
     <section class="rounded-lg border border-line bg-white p-4">
         <label class="grid gap-1 text-sm font-semibold">Observações
             <textarea class="min-h-28 rounded-md border border-line px-3 py-2 outline-none focus:border-ink" name="notes"><?= e($project['notes'] ?? '') ?></textarea>
