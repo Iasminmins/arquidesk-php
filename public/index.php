@@ -4,6 +4,10 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = current_user();
 
+if ($user && $user['role'] === 'SUPER_ADMIN') {
+    redirect('/super-admin.php');
+}
+
 if (!$user) {
     $pageTitle = 'Arquidesk';
     require __DIR__ . '/../app/includes/header.php';

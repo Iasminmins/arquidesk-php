@@ -2,8 +2,9 @@
 
 require_once __DIR__ . '/../app/includes/auth.php';
 
-if (current_user()) {
-    redirect('/');
+$loggedUser = current_user();
+if ($loggedUser) {
+    redirect($loggedUser['role'] === 'SUPER_ADMIN' ? '/super-admin.php' : '/');
 }
 
 $error = '';
@@ -13,7 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
 
     if (login_user($email, $password)) {
-        redirect('/');
+        $loggedUser = current_user();
+        redirect(($loggedUser['role'] ?? '') === 'SUPER_ADMIN' ? '/super-admin.php' : '/');
     }
 
     $error = 'E-mail ou senha inválidos.';
