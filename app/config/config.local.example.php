@@ -17,4 +17,11 @@ return [
         'pass' => 'SUA_SENHA_AQUI',
         'charset' => 'utf8mb4',
     ],
+    // Remetente dos emails (esqueci a senha etc.).
+    // Use um endereço do SEU domínio na Hostinger para melhor entrega.
+    'mail' => [
+        'from_email' => 'noreply@seudominio.com.br',
+        'from_name'  => 'Arquidesk',
+        'reply_to'   => 'contato@seudominio.com.br',
+    ],
 ];

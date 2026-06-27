@@ -1,6 +1,8 @@
 <?php
 
 require_once __DIR__ . '/../app/includes/auth.php';
+require_once __DIR__ . '/../app/includes/mailer.php';
+require_once __DIR__ . '/../app/includes/email-templates.php';
 
 $error = '';
 $success = '';
@@ -32,21 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $resetUrl = $baseUrl . '/reset-password.php?token=' . $token;
 
-            // Send email
-            $subject = 'Redefinir senha - Arquidesk';
-            $body = "Olá {$user['name']},\n\n";
-            $body .= "Você solicitou a redefinição de senha no Arquidesk.\n\n";
-            $body .= "Clique no link abaixo para criar uma nova senha:\n";
-            $body .= $resetUrl . "\n\n";
-            $body .= "Este link é válido por 1 hora.\n\n";
-            $body .= "Se você não solicitou, ignore este e-mail.\n\n";
-            $body .= "— Equipe Arquidesk";
-
-            $headers = "From: noreply@" . ($_SERVER['HTTP_HOST'] ?? 'arquidesk.com') . "\r\n";
-            $headers .= "Reply-To: noreply@" . ($_SERVER['HTTP_HOST'] ?? 'arquidesk.com') . "\r\n";
-            $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-
-            @mail($user['email'], $subject, $body, $headers);
+            // Send email via SMTP (PHPMailer)
+            $htmlBody = email_password_reset($user['name'], $resetUrl);
+            $textBody = email_password_reset_text($user['name'], $resetUrl);
+            send_mail($user['email'], $user['name'], 'Redefinir senha - Arquidesk', $htmlBody, $textBody);
         }
 
         // Always show success (don't reveal if email exists)
