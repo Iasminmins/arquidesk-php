@@ -98,7 +98,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <form method="get" class="flex flex-col gap-3 md:flex-row md:items-end">
             <label class="grid gap-1 text-sm font-semibold">Mês
                 <select class="min-h-10 rounded-md border border-line px-3" name="month">
-                    <?php for ($i = 1; $i <= 12; $i++): ?><option value="<?= $i ?>" <?= $month === $i ? 'selected' : '' ?>><?= $i ?> - <?= month_name_pt($i) ?></option><?php endfor; ?>
+                    <?php for ($i = 1; $i <= 12; $i++): ?><option value="<?= $i ?>" <?= $month === $i ? 'selected' : '' ?>><?= month_name_pt($i) ?></option><?php endfor; ?>
                 </select>
             </label>
             <label class="grid gap-1 text-sm font-semibold">Ano
