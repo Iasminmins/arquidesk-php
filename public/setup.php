@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), 'ADMIN_EMPRESA']);
 
                 $selectedPlan = $_POST['selected_plan'] ?? 'PROFISSIONAL';
-                $validPlans = ['START', 'PROFISSIONAL', 'PREMIUM'];
+                $validPlans = ['ESSENCIAL', 'PROFISSIONAL', 'PREMIUM'];
                 if (!in_array($selectedPlan, $validPlans, true)) $selectedPlan = 'PROFISSIONAL';
 
                 $stmt = $pdo->prepare('insert into subscriptions (company_id, plan, status, trial_ends_at) values (?, ?, ?, date_add(curdate(), interval 30 day))');
