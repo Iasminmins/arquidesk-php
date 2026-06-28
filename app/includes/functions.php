@@ -322,11 +322,83 @@ function is_subscription_blocked(array $subscription): bool
     return in_array($subscription['status'], ['CANCELED', 'BLOCKED'], true);
 }
 
+/**
+ * Régua de carência (dunning) das assinaturas.
+ *
+ * Dado o vencimento, calcula em que fase a empresa está SEM nunca apagar dados.
+ * Bloquear = apenas suspender acesso (redirect para pagamento).
+ *
+ * Fases (dias após o vencimento):
+ *   0          -> 'active'   : em dia (ou ainda não venceu)
+ *   1 a 7      -> 'grace'    : venceu, ainda usa, aviso normal
+ *   8 a 10     -> 'critical' : venceu, ainda usa, aviso urgente
+ *   11+        -> 'blocked'  : acesso suspenso
+ *
+ * Status administrativos manuais têm prioridade:
+ *   CANCELED/BLOCKED -> sempre 'blocked'
+ *   ACTIVE com vencimento futuro -> 'active'
+ */
+function subscription_grace_days(): int
+{
+    return 10; // total de dias de tolerância após o vencimento
+}
+
+function subscription_critical_days(): int
+{
+    return 3; // últimos dias (dentro da carência) com aviso urgente
+}
+
+function subscription_state(array $subscription): array
+{
+    $status = $subscription['status'] ?? 'TRIAL';
+
+    // Bloqueio administrativo manual sempre vence.
+    if (in_array($status, ['CANCELED', 'BLOCKED'], true)) {
+        return ['phase' => 'blocked', 'days_left' => 0, 'days_overdue' => null];
+    }
+
+    $endRaw = !empty($subscription['current_period_end'])
+        ? $subscription['current_period_end']
+        : ($subscription['trial_ends_at'] ?? null);
+
+    // Sem data de referência: não bloqueia (evita cortar por dado faltante).
+    if (!$endRaw) {
+        return ['phase' => 'active', 'days_left' => null, 'days_overdue' => null];
+    }
+
+    $today = new DateTimeImmutable('today');
+    $end = new DateTimeImmutable($endRaw);
+    $grace = subscription_grace_days();
+    $critical = subscription_critical_days();
+
+    if ($today <= $end) {
+        // Ainda não venceu.
+        $daysLeft = (int) $today->diff($end)->days;
+        return ['phase' => 'active', 'days_left' => $daysLeft, 'days_overdue' => 0];
+    }
+
+    $daysOverdue = (int) $end->diff($today)->days;
+    $daysToBlock = $grace - $daysOverdue; // quantos dias faltam para bloquear
+
+    if ($daysOverdue > $grace) {
+        return ['phase' => 'blocked', 'days_left' => 0, 'days_overdue' => $daysOverdue];
+    }
+    if ($daysToBlock <= $critical) {
+        return ['phase' => 'critical', 'days_left' => max(0, $daysToBlock), 'days_overdue' => $daysOverdue];
+    }
+    return ['phase' => 'grace', 'days_left' => max(0, $daysToBlock), 'days_overdue' => $daysOverdue];
+}
+
 function require_active_subscription(array $user, string $allowedPage = ''): void
 {
     if ($user['role'] === 'SUPER_ADMIN') return;
     $sub = get_subscription((int) $user['company_id']);
-    if (!is_subscription_blocked($sub)) return;
+
+    // Bloqueia se: status manual CANCELED/BLOCKED, OU a carência pós-vencimento estourou.
+    // IMPORTANTE: bloquear = apenas suspender acesso. Nenhum dado é apagado.
+    $state = subscription_state($sub);
+    if ($state['phase'] !== 'blocked') return;
+
     $allowed = ['/subscription.php', '/company-settings.php', '/logout.php'];
     $current = strtok($_SERVER['REQUEST_URI'], '?');
     if (in_array($current, $allowed, true)) return;

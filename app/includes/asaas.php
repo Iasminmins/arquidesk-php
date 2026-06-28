@@ -98,3 +98,54 @@ function asaas_checkout_url(string $checkoutId): string
     $domain = asaas_env() === 'production' ? 'https://www.asaas.com' : 'https://sandbox.asaas.com';
     return $domain . '/checkoutSession/show?id=' . rawurlencode($checkoutId);
 }
+
+
+/**
+ * Cria (ou atualiza) um cliente no Asaas e retorna o ID do cliente.
+ * Retorna ['id' => 'cus_xxx'] em sucesso ou ['errors' => [...]].
+ *
+ * @param array $data name, cpfCnpj, email, phone (cpfCnpj é obrigatório no Asaas)
+ */
+function asaas_create_customer(array $data): array
+{
+    $body = [
+        'name'     => $data['name'] ?? '',
+        'cpfCnpj'  => preg_replace('/\D/', '', (string) ($data['cpfCnpj'] ?? '')),
+        'email'    => $data['email'] ?? '',
+        'mobilePhone' => preg_replace('/\D/', '', (string) ($data['phone'] ?? '')),
+    ];
+    return asaas_request('POST', '/customers', $body);
+}
+
+/**
+ * Cria uma assinatura recorrente mensal no Asaas.
+ * billingType: 'UNDEFINED' deixa o cliente escolher Pix/boleto/cartão no checkout.
+ *
+ * @param string $customerId  ID do cliente Asaas (cus_xxx)
+ * @param float  $value       valor mensal
+ * @param string $description descrição (ex.: 'Arquidesk - Plano Profissional')
+ * @param string $nextDueDate vencimento da 1ª cobrança (Y-m-d)
+ */
+function asaas_create_subscription(string $customerId, float $value, string $description, string $nextDueDate): array
+{
+    $body = [
+        'customer'    => $customerId,
+        'billingType' => 'UNDEFINED',
+        'value'       => $value,
+        'nextDueDate' => $nextDueDate,
+        'cycle'       => 'MONTHLY',
+        'description' => $description,
+    ];
+    return asaas_request('POST', '/subscriptions', $body);
+}
+
+/**
+ * Busca a primeira cobrança gerada por uma assinatura (para pegar o link de pagamento).
+ * Retorna a URL da fatura (invoiceUrl) ou string vazia.
+ */
+function asaas_subscription_first_payment_url(string $subscriptionId): string
+{
+    $resp = asaas_request('GET', '/subscriptions/' . rawurlencode($subscriptionId) . '/payments');
+    $first = $resp['data'][0] ?? null;
+    return is_array($first) ? (string) ($first['invoiceUrl'] ?? '') : '';
+}
