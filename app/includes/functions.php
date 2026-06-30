@@ -92,6 +92,7 @@ function role_nav(string $role): array
     return match ($role) {
         'PROJETISTA' => [
             '/' => 'Dashboard',
+            '/my-day.php' => 'Meu Dia',
             '/schedule.php' => 'Agendamentos',
             '/future-clients.php' => 'Clientes Futuros',
             '/projects.php?stage=PROJETO' => 'Projeto',
@@ -106,6 +107,7 @@ function role_nav(string $role): array
         ],
         'CONFERENTE' => [
             '/' => 'Dashboard',
+            '/my-day.php' => 'Meu Dia',
             '/schedule.php' => 'Agendamentos',
             '/projects.php?stage=PROJETO' => 'Projeto',
             '/projects.php?stage=NEGOCIACAO' => 'Negociação',
@@ -125,6 +127,7 @@ function role_nav(string $role): array
         ],
         default => [
             '/' => 'Dashboard',
+            '/my-day.php' => 'Meu Dia',
             '/schedule.php' => 'Agendamentos',
             '/future-clients.php' => 'Clientes Futuros',
             '/projects.php?stage=PROJETO' => 'Projeto',

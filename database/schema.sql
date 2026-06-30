@@ -207,6 +207,31 @@ create table if not exists future_clients (
   index fc_company_status_idx (company_id, status)
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
 
+create table if not exists daily_checklist_items (
+  id int unsigned auto_increment primary key,
+  company_id int unsigned not null,
+  user_id int unsigned not null,
+  client_project_id int unsigned null,
+  title varchar(180) not null,
+  description text null,
+  checklist_date date not null,
+  priority enum('BAIXA','NORMAL','ALTA') not null default 'NORMAL',
+  status enum('PENDENTE','CONCLUIDO','CANCELADO') not null default 'PENDENTE',
+  source varchar(20) not null default 'MANUAL',
+  auto_key varchar(160) null,
+  created_by_user_id int unsigned null,
+  completed_at datetime null,
+  created_at timestamp not null default current_timestamp,
+  updated_at timestamp null default null on update current_timestamp,
+  constraint dci_company_fk foreign key (company_id) references companies(id) on delete cascade,
+  constraint dci_user_fk foreign key (user_id) references users(id) on delete cascade,
+  constraint dci_project_fk foreign key (client_project_id) references client_projects(id) on delete set null,
+  constraint dci_created_by_fk foreign key (created_by_user_id) references users(id) on delete set null,
+  unique key dci_auto_unique (company_id, user_id, checklist_date, auto_key),
+  index dci_company_date_idx (company_id, checklist_date),
+  index dci_user_date_idx (user_id, checklist_date)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+
 create table if not exists password_resets (
   id int unsigned auto_increment primary key,
   user_id int unsigned not null,
