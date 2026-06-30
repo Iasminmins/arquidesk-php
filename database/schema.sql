@@ -232,6 +232,27 @@ create table if not exists daily_checklist_items (
   index dci_user_date_idx (user_id, checklist_date)
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
 
+create table if not exists manual_schedule_items (
+  id int unsigned auto_increment primary key,
+  company_id int unsigned not null,
+  user_id int unsigned null,
+  client_project_id int unsigned null,
+  title varchar(180) not null,
+  description text null,
+  schedule_date date not null,
+  start_time time null,
+  category varchar(40) not null default 'COMPROMISSO',
+  created_by_user_id int unsigned null,
+  created_at timestamp not null default current_timestamp,
+  updated_at timestamp null default null on update current_timestamp,
+  constraint msi_company_fk foreign key (company_id) references companies(id) on delete cascade,
+  constraint msi_user_fk foreign key (user_id) references users(id) on delete set null,
+  constraint msi_project_fk foreign key (client_project_id) references client_projects(id) on delete set null,
+  constraint msi_created_by_fk foreign key (created_by_user_id) references users(id) on delete set null,
+  index msi_company_date_idx (company_id, schedule_date),
+  index msi_user_date_idx (user_id, schedule_date)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+
 create table if not exists password_resets (
   id int unsigned auto_increment primary key,
   user_id int unsigned not null,
