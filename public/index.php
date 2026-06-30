@@ -307,6 +307,193 @@ $recentStmt = db()->prepare($recentSql);
 $recentStmt->execute($recentParams);
 $recentProjects = $recentStmt->fetchAll();
 
+[$prevStart, $prevEnd] = previous_period_range($period, $periodStart, $periodEnd);
+
+$prevSalesParams = [$companyId, $prevStart, $prevEnd];
+$prevPaymentsParams = [$companyId, $prevStart, $prevEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $prevSalesParams[] = (int) $user['id'];
+    $prevPaymentsParams[] = (int) $user['id'];
+}
+$prevSalesStmt = db()->prepare($salesSql);
+$prevSalesStmt->execute($prevSalesParams);
+$prevTotalSold = (float) $prevSalesStmt->fetchColumn();
+
+$prevPaymentsStmt = db()->prepare($paymentsSql);
+$prevPaymentsStmt->execute($prevPaymentsParams);
+$prevTotalReceived = (float) $prevPaymentsStmt->fetchColumn();
+$prevCommission = $prevTotalReceived * commission_rate($prevTotalReceived);
+
+$soldDelta = metric_delta($totalSold, $prevTotalSold);
+$receivedDelta = metric_delta($totalReceived, $prevTotalReceived);
+$commissionValue = $totalReceived * $commissionRate;
+$commissionDelta = metric_delta($commissionValue, $prevCommission);
+
+$pipelineSql = 'select current_stage, count(*) as total from client_projects where company_id = ? and (negotiation_status is null or negotiation_status != ?)';
+$pipelineParams = [$companyId, 'Desistida'];
+if ($user['role'] === 'PROJETISTA') {
+    $pipelineSql .= ' and designer_id = ?';
+    $pipelineParams[] = (int) $user['id'];
+}
+$pipelineSql .= ' group by current_stage';
+$pipelineStmt = db()->prepare($pipelineSql);
+$pipelineStmt->execute($pipelineParams);
+$pipelineCounts = [];
+foreach ($pipelineStmt->fetchAll() as $row) {
+    $pipelineCounts[$row['current_stage']] = (int) $row['total'];
+}
+$pipelineTotal = max(1, array_sum($pipelineCounts));
+$pipelineActive = max(0, array_sum($pipelineCounts) - ($pipelineCounts['FINALIZADO'] ?? 0));
+
+$performanceSql = 'select to_stage, count(*) as total
+    from flow_history fh
+    join client_projects p on p.id = fh.client_project_id and p.company_id = fh.company_id
+    where fh.company_id = ? and date(fh.created_at) between ? and ?';
+$performanceParams = [$companyId, $periodStart, $periodEnd];
+if ($user['role'] === 'PROJETISTA') {
+    $performanceSql .= ' and p.designer_id = ?';
+    $performanceParams[] = (int) $user['id'];
+}
+$performanceSql .= ' group by to_stage';
+$performanceStmt = db()->prepare($performanceSql);
+$performanceStmt->execute($performanceParams);
+$movementCounts = [];
+foreach ($performanceStmt->fetchAll() as $row) {
+    $movementCounts[$row['to_stage']] = (int) $row['total'];
+}
+$movementTotal = array_sum($movementCounts);
+$maxMovement = max(1, ...array_values($movementCounts ?: [1]));
+
+$newProjects = $movementCounts['PROJETO'] ?? ($stageCounts['PROJETO'] ?? 0);
+$closedDeals = $movementCounts['CONFERENCIA'] ?? 0;
+$finishedProjects = $movementCounts['FINALIZADO'] ?? 0;
+$lostDeals = 0;
+try {
+    $lostSql = "select count(*) from client_projects where company_id = ? and negotiation_status = 'Desistida' and date(coalesce(updated_at, created_at)) between ? and ?";
+    $lostParams = [$companyId, $periodStart, $periodEnd];
+    if ($user['role'] === 'PROJETISTA') {
+        $lostSql .= ' and designer_id = ?';
+        $lostParams[] = (int) $user['id'];
+    }
+    $lostStmt = db()->prepare($lostSql);
+    $lostStmt->execute($lostParams);
+    $lostDeals = (int) $lostStmt->fetchColumn();
+} catch (Throwable) {
+    $lostDeals = 0;
+}
+$conversionBase = max(1, $closedDeals + $lostDeals);
+$conversionRate = (int) round(($closedDeals / $conversionBase) * 100);
+$velocityRate = $pipelineActive > 0 ? min(100, (int) round(($movementTotal / $pipelineActive) * 100)) : 0;
+
+$staleSql = "select p.*, u.name as designer_name
+     from client_projects p
+     left join users u on u.id = p.designer_id
+     where p.company_id = ?
+       and p.current_stage != 'FINALIZADO'
+       and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
+$staleParams = [$companyId];
+if ($user['role'] === 'PROJETISTA') {
+    $staleSql .= ' and p.designer_id = ?';
+    $staleParams[] = (int) $user['id'];
+}
+$staleSql .= ' order by p.updated_at asc';
+$staleStmt = db()->prepare($staleSql);
+$staleStmt->execute($staleParams);
+$candidates = $staleStmt->fetchAll();
+
+// Pre-carrega datas de entrada por etapa em uma unica query - elimina N+1 de project_days_in_stage()
+$arrivalMap = [];
+if ($candidates) {
+    $ids = array_column($candidates, 'id');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $arrivalStmt = db()->prepare(
+        'select client_project_id, to_stage, max(created_at) as last_at
+         from flow_history
+         where company_id = ? and client_project_id in (' . $placeholders . ')
+         group by client_project_id, to_stage'
+    );
+    $arrivalStmt->execute(array_merge([$companyId], $ids));
+    foreach ($arrivalStmt->fetchAll() as $row) {
+        $arrivalMap[(int) $row['client_project_id']][$row['to_stage']] = $row['last_at'];
+    }
+}
+
+$staleProjects = [];
+foreach ($candidates as $candidate) {
+    $stage = (string) ($candidate['current_stage'] ?? '');
+    $ref = $arrivalMap[(int) $candidate['id']][$stage]
+        ?? $candidate['updated_at']
+        ?? $candidate['created_at']
+        ?? null;
+    $daysInStage = 0;
+    if ($ref) {
+        $refDate = new DateTimeImmutable(substr((string) $ref, 0, 10));
+        $daysInStage = max(0, (int) $refDate->diff(new DateTimeImmutable('today'))->days);
+    }
+    if ($daysInStage < project_stale_threshold($stage)) {
+        continue;
+    }
+    $candidate['days_stale'] = $daysInStage;
+    $staleProjects[] = $candidate;
+}
+usort($staleProjects, fn($a, $b) => ($b['days_stale'] <=> $a['days_stale']) ?: strcmp((string) ($a['updated_at'] ?? ''), (string) ($b['updated_at'] ?? '')));
+$staleProjects = array_slice($staleProjects, 0, 6);
+
+$today = date('Y-m-d');
+$pendingChecklist = 0;
+$scheduleCount = 0;
+try {
+    $checklistStmt = db()->prepare(
+        "select count(*) from daily_checklist_items
+         where company_id = ? and user_id = ? and checklist_date = ? and status = 'PENDENTE'"
+    );
+    $checklistStmt->execute([$companyId, (int) $user['id'], $today]);
+    $pendingChecklist = (int) $checklistStmt->fetchColumn();
+} catch (Throwable) {
+    $pendingChecklist = 0;
+}
+
+try {
+    $scheduleFields = ['presentation_date', 'closing_date', 'measurement_date', 'sent_to_factory_date', 'billing_date', 'assembly_started_date', 'assembly_finished_date', 'order_date', 'assistance_date'];
+    $scheduleConds = [];
+    foreach ($scheduleFields as $field) {
+        $scheduleConds[] = "p.{$field} = ?";
+    }
+    $scheduleSql = 'select count(*) from client_projects p where p.company_id = ? and (' . implode(' or ', $scheduleConds) . ')';
+    $scheduleParams = array_merge([$companyId], array_fill(0, count($scheduleFields), $today));
+    if ($user['role'] === 'PROJETISTA') {
+        $scheduleSql .= ' and p.designer_id = ?';
+        $scheduleParams[] = (int) $user['id'];
+    }
+    $scheduleStmt = db()->prepare($scheduleSql);
+    $scheduleStmt->execute($scheduleParams);
+    $scheduleCount += (int) $scheduleStmt->fetchColumn();
+
+    $manualScheduleSql = 'select count(*) from manual_schedule_items where company_id = ? and schedule_date = ?';
+    $manualScheduleParams = [$companyId, $today];
+    if ($user['role'] !== 'ADMIN_EMPRESA') {
+        $manualScheduleSql .= ' and (user_id = ? or created_by_user_id = ?)';
+        $manualScheduleParams[] = (int) $user['id'];
+        $manualScheduleParams[] = (int) $user['id'];
+    }
+    $manualScheduleStmt = db()->prepare($manualScheduleSql);
+    $manualScheduleStmt->execute($manualScheduleParams);
+    $scheduleCount += (int) $manualScheduleStmt->fetchColumn();
+} catch (Throwable) {
+    $scheduleCount = 0;
+}
+
+function delta_badge(array $delta): string
+{
+    $class = match ($delta['direction']) {
+        'up' => 'text-emerald-700 bg-emerald-50 border-emerald-200',
+        'down' => 'text-red-700 bg-red-50 border-red-200',
+        default => 'text-slate-600 bg-fog border-line',
+    };
+
+    return '<span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ' . $class . '">' . e($delta['label']) . ' vs período anterior</span>';
+}
+
 require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
 ?>
@@ -333,37 +520,65 @@ require __DIR__ . '/../app/includes/sidebar.php';
         </div>
     </form>
 
+    <section class="overflow-hidden rounded-lg border border-line bg-ink text-white shadow-lg">
+        <div class="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+                <p class="text-sm text-white/70">O que fazer hoje</p>
+                <h2 class="mt-1 text-2xl font-black"><?= e(date('d/m/Y')) ?></h2>
+                <p class="mt-2 text-sm text-white/75">
+                    <?= $pendingChecklist ?> <?= $pendingChecklist === 1 ? 'tarefa pendente' : 'tarefas pendentes' ?> no Meu Dia
+                    · <?= $scheduleCount ?> <?= $scheduleCount === 1 ? 'compromisso' : 'compromissos' ?> na agenda
+                </p>
+            </div>
+            <div class="flex flex-col gap-2 sm:flex-row">
+                <a href="/my-day.php" class="inline-flex min-h-11 items-center justify-center rounded-md bg-white px-5 text-sm font-bold text-ink hover:bg-fog">
+                    Abrir Meu Dia<?= $pendingChecklist > 0 ? ' (' . $pendingChecklist . ')' : '' ?>
+                </a>
+                <a href="/schedule.php" class="inline-flex min-h-11 items-center justify-center rounded-md border border-white/20 px-5 text-sm font-bold text-white hover:bg-white/10">
+                    Ver Agenda<?= $scheduleCount > 0 ? ' (' . $scheduleCount . ')' : '' ?>
+                </a>
+            </div>
+        </div>
+    </section>
+
     <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <?php if ($user['role'] === 'ADMIN_EMPRESA'): ?>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Projetos em andamento no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= max(0, $totalProjects - ($stageCounts['FINALIZADO'] ?? 0)) ?></strong>
+                <span class="text-sm text-slate-500">Projetos ativos no funil</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineActive ?></strong>
+                <span class="mt-2 block text-xs text-slate-500"><?= array_sum($pipelineCounts) ?> projetos no total</span>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
                 <span class="text-sm text-slate-500">Total de venda no <?= e($periodLabel) ?></span>
                 <strong class="mt-2 block text-3xl"><?= money_br($totalSold) ?></strong>
+                <div class="mt-2"><?= delta_badge($soldDelta) ?></div>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
                 <span class="text-sm text-slate-500">Total que entrou no <?= e($periodLabel) ?></span>
                 <strong class="mt-2 block text-3xl"><?= money_br($totalReceived) ?></strong>
+                <div class="mt-2"><?= delta_badge($receivedDelta) ?></div>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
                 <span class="text-sm text-slate-500">Valor da comissão no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= money_br($totalReceived * $commissionRate) ?></strong>
-                <span class="mt-1 block text-xs text-slate-500"><?= (int) ($commissionRate * 100) ?>% aplicado</span>
+                <strong class="mt-2 block text-3xl"><?= money_br($commissionValue) ?></strong>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <?= delta_badge($commissionDelta) ?>
+                    <span class="text-xs text-slate-500"><?= (int) ($commissionRate * 100) ?>% aplicado</span>
+                </div>
             </article>
         <?php elseif ($user['role'] === 'PROJETISTA'): ?>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Meus projetos no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= $totalProjects ?></strong>
+                <span class="text-sm text-slate-500">Meus projetos ativos</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineActive ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Minhas negociações no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= $stageCounts['NEGOCIACAO'] ?? 0 ?></strong>
+                <span class="text-sm text-slate-500">Minhas negociações</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineCounts['NEGOCIACAO'] ?? 0 ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
                 <span class="text-sm text-slate-500">Meu total fechado no <?= e($periodLabel) ?></span>
                 <strong class="mt-2 block text-3xl"><?= money_br($totalSold) ?></strong>
+                <div class="mt-2"><?= delta_badge($soldDelta) ?></div>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
                 <span class="text-sm text-slate-500">Meu percentual atingido</span>
@@ -371,54 +586,76 @@ require __DIR__ . '/../app/includes/sidebar.php';
             </article>
         <?php else: ?>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Conferências pendentes no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= $stageCounts['CONFERENCIA'] ?? 0 ?></strong>
+                <span class="text-sm text-slate-500">Conferências no funil</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineCounts['CONFERENCIA'] ?? 0 ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Itens em montagem no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= $stageCounts['MONTAGEM'] ?? 0 ?></strong>
+                <span class="text-sm text-slate-500">Itens em montagem</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineCounts['MONTAGEM'] ?? 0 ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Assistências abertas no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= $stageCounts['ASSISTENCIA'] ?? 0 ?></strong>
+                <span class="text-sm text-slate-500">Assistências abertas</span>
+                <strong class="mt-2 block text-3xl"><?= $pipelineCounts['ASSISTENCIA'] ?? 0 ?></strong>
             </article>
             <article class="rounded-lg border border-line bg-white p-4">
-                <span class="text-sm text-slate-500">Prazos importantes no <?= e($periodLabel) ?></span>
-                <strong class="mt-2 block text-3xl"><?= count(array_filter($recentProjects, fn($p) => !empty($p['billing_date']) || !empty($p['assembly_finished_date']))) ?></strong>
+                <span class="text-sm text-slate-500">Projetos parados</span>
+                <strong class="mt-2 block text-3xl"><?= count($staleProjects) ?></strong>
             </article>
         <?php endif; ?>
     </div>
 
-    <div class="grid gap-4 xl:grid-cols-[1fr_380px]">
-        <section class="rounded-lg border border-line bg-white p-4">
-            <h2 class="font-bold">Etapas operacionais</h2>
-            <div class="mt-4 grid gap-3 md:grid-cols-3">
-                <?php foreach (['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'] as $stage): ?>
-                    <a class="rounded-md bg-fog p-4 transition hover:bg-slate-100" href="/projects.php?stage=<?= e($stage) ?>">
-                        <span class="text-sm text-slate-500"><?= e(stage_label($stage)) ?></span>
-                        <strong class="mt-1 block text-2xl"><?= $stageCounts[$stage] ?? 0 ?></strong>
+    <div class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <section class="rounded-lg border border-line bg-white p-4 shadow-sm">
+            <div class="flex items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 17 6-6 4 4 7-7M14 8h6v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div>
+                    <h2 class="font-bold">Funil operacional</h2>
+                    <p class="text-sm text-slate-500">Distribuição atual dos projetos por etapa.</p>
+                </div>
+            </div>
+            <div class="mt-5 grid gap-3">
+                <?php foreach (['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'] as $stageKey): ?>
+                    <?php
+                    $count = $pipelineCounts[$stageKey] ?? 0;
+                    $width = $pipelineTotal > 0 ? max(8, (int) round(($count / $pipelineTotal) * 100)) : 0;
+                    ?>
+                    <a href="/projects.php?layout=kanban#col-<?= e($stageKey) ?>" class="group grid grid-cols-[120px_1fr_48px] items-center gap-3 rounded-md p-2 transition hover:bg-fog">
+                        <span class="text-sm text-slate-600 group-hover:text-ink"><?= e(stage_label($stageKey)) ?></span>
+                        <span class="h-2.5 rounded-full bg-stone-100">
+                            <span class="block h-2.5 rounded-full bg-emerald-900 transition-all" style="width: <?= $width ?>%"></span>
+                        </span>
+                        <strong class="text-right text-sm"><?= $count ?></strong>
                     </a>
                 <?php endforeach; ?>
             </div>
         </section>
 
-        <section class="rounded-lg border border-line bg-white p-4">
-            <h2 class="font-bold">Ultimas movimentacoes</h2>
-            <div class="mt-3 grid gap-3">
-                <?php if (!$recentProjects): ?>
-                    <div class="rounded-md border border-line p-3 text-sm text-slate-500">Nenhum projeto cadastrado ainda.</div>
+        <section class="rounded-lg border border-line bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-bold">Projetos parados</h2>
+                    <p class="text-sm text-slate-500">7+ dias em Projeto/Negociação · 5+ dias nas demais etapas.</p>
+                </div>
+                <a href="/projects.php?layout=kanban" class="text-sm font-semibold text-emerald-800 hover:underline">Ver Kanban</a>
+            </div>
+            <div class="mt-4 grid gap-3">
+                <?php if (!$staleProjects): ?>
+                    <div class="rounded-md border border-line bg-fog p-4 text-sm text-slate-500">Nenhum projeto parado no momento. Boa operação.</div>
                 <?php endif; ?>
-                <?php foreach ($recentProjects as $project): ?>
-                    <article class="rounded-md border border-line p-3 text-sm">
-                        <strong><?= e($project['project_name']) ?></strong>
-                        <span class="block text-slate-500">
-                            <?= e($project['client_name']) ?> · <?= e(stage_label($project['current_stage'])) ?>
-                        </span>
-                    </article>
+                <?php foreach ($staleProjects as $project): ?>
+                    <a href="/projects.php?layout=kanban#col-<?= e($project['current_stage']) ?>" class="rounded-md border border-amber-200 bg-amber-50/70 p-3 text-sm transition hover:bg-amber-50">
+                        <div class="flex items-start justify-between gap-2">
+                            <strong><?= e($project['client_name']) ?></strong>
+                            <span class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"><?= (int) $project['days_stale'] ?>d</span>
+                        </div>
+                        <span class="mt-1 block text-slate-600"><?= e($project['project_name']) ?></span>
+                        <span class="mt-1 block text-xs text-slate-500"><?= e(stage_label($project['current_stage'])) ?><?= $project['designer_name'] ? ' · ' . e($project['designer_name']) : '' ?></span>
+                    </a>
                 <?php endforeach; ?>
             </div>
         </section>
     </div>
+
 </section>
 <?php require __DIR__ . '/../app/includes/footer.php'; ?>
 

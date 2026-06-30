@@ -4,6 +4,11 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
+$layout = $_GET['layout'] ?? ($_COOKIE['projects_layout'] ?? 'kanban');
+if (!in_array($layout, ['kanban', 'table'], true)) {
+    $layout = 'kanban';
+}
+setcookie('projects_layout', $layout, time() + 31536000, '/');
 $stage = $_GET['stage'] ?? 'PROJETO';
 $allowedStages = ['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'];
 if (!in_array($stage, $allowedStages, true)) {
@@ -11,7 +16,8 @@ if (!in_array($stage, $allowedStages, true)) {
 }
 
 $view = $_GET['view'] ?? 'active';
-$pageTitle = stage_label($stage);
+$pageTitle = $layout === 'kanban' ? 'Projetos' : stage_label($stage);
+$primaryColor = $user['primary_color'] ?? '#15201d';
 $companyId = (int) $user['company_id'];
 $search = trim($_GET['q'] ?? '');
 $currentOrder = stage_order($stage);
@@ -94,34 +100,50 @@ if ($stage === 'NEGOCIACAO') {
 $canCreate = can_create_project($user, $stage);
 $canEdit = can_write_project($user, $stage);
 $canDelete = can_delete_project($user);
+$canDragKanban = $user['role'] !== 'CONFERENTE';
 
-function project_status_for_stage(array $project, string $stage): string
-{
-    $field = status_field_for_stage($stage);
-    if ($field && !empty($project[$field])) {
-        return $project[$field];
+$kanbanByStage = array_fill_keys($allowedStages, []);
+if ($layout === 'kanban') {
+    $kanbanSql = "select p.*, u.name as designer_name
+            from client_projects p
+            left join users u on u.id = p.designer_id
+            where p.company_id = ?";
+    $kanbanParams = [$companyId];
+    if ($user['role'] === 'PROJETISTA') {
+        $kanbanSql .= ' and p.designer_id = ?';
+        $kanbanParams[] = (int) $user['id'];
     }
-
-    return match ($stage) {
-        'PROJETO' => 'Sondagem',
-        'NEGOCIACAO' => 'Detalhamento de venda',
-        'CONFERENCIA' => 'Medição',
-        'MONTAGEM' => 'Vistoria de montagem',
-        'ASSISTENCIA' => 'Aberta',
-        default => 'Finalizado',
-    };
+    $kanbanSql .= " and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
+    if ($search !== '') {
+        $kanbanSql .= ' and (p.client_name like ? or p.project_name like ? or u.name like ?)';
+        $term = "%{$search}%";
+        $kanbanParams[] = $term;
+        $kanbanParams[] = $term;
+        $kanbanParams[] = $term;
+    }
+    $kanbanSql .= ' order by p.updated_at desc, p.created_at desc';
+    $kanbanStmt = db()->prepare($kanbanSql);
+    $kanbanStmt->execute($kanbanParams);
+    foreach ($kanbanStmt->fetchAll() as $row) {
+        $rowStage = $row['current_stage'];
+        if (isset($kanbanByStage[$rowStage])) {
+            $kanbanByStage[$rowStage][] = $row;
+        }
+    }
 }
 
-function project_dates_for_stage(array $project, string $stage): array
+function projects_query_args(array $extra = []): string
 {
-    return match ($stage) {
-        'PROJETO' => [['Entrada', $project['entry_date']], ['Medição', $project['measurement_date']], ['Apresentação', $project['presentation_date']]],
-        'NEGOCIACAO' => [['Entrada', $project['entry_date']], ['Apresentação', $project['presentation_date']], ['Fechamento', $project['closing_date']]],
-        'CONFERENCIA' => [['Medição', $project['measurement_date']], ['Envio fábrica', $project['sent_to_factory_date']], ['Faturamento', $project['billing_date']]],
-        'MONTAGEM' => [['Início montagem', $project['assembly_started_date']], ['Fim montagem', $project['assembly_finished_date']]],
-        'ASSISTENCIA' => [['Pedido', $project['order_date']], ['Assistência', $project['assistance_date']]],
-        default => [['Finalizado', $project['finished_at']]],
-    };
+    $params = array_merge($_GET, $extra);
+    foreach ($params as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        }
+    }
+
+    $query = http_build_query($params);
+
+    return $query !== '' ? '?' . $query : '';
 }
 
 require __DIR__ . '/../app/includes/header.php';
@@ -135,29 +157,104 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($_GET['error']) ?></div>
     <?php endif; ?>
 
-    <div class="flex flex-col gap-3 md:flex-row md:items-center">
-        <form method="get" class="flex flex-1 gap-2">
-            <input type="hidden" name="stage" value="<?= e($stage) ?>">
-            <input type="hidden" name="view" value="<?= e($view) ?>">
-            <input class="min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink md:max-w-sm" name="q" value="<?= e($search) ?>" placeholder="Filtrar por cliente, projeto ou projetista">
-            <button class="rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-fog" type="submit">Filtrar</button>
-        </form>
-        <a class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-fog" href="/export.php?type=stage&stage=<?= e($stage) ?>&view=<?= e($view) ?>">Exportar</a>
-        <?php if ($canCreate): ?>
-            <a class="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white" href="/project-form.php?stage=<?= e($stage) ?>"><?= $stage === 'ASSISTENCIA' ? 'Criar assistência' : 'Criar projeto' ?></a>
-        <?php endif; ?>
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:flex-1">
+            <form method="get" class="flex flex-1 gap-2">
+                <?php if ($layout === 'table'): ?>
+                    <input type="hidden" name="stage" value="<?= e($stage) ?>">
+                    <input type="hidden" name="view" value="<?= e($view) ?>">
+                    <input type="hidden" name="layout" value="table">
+                <?php else: ?>
+                    <input type="hidden" name="layout" value="kanban">
+                <?php endif; ?>
+                <input class="min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink md:max-w-sm" name="q" value="<?= e($search) ?>" placeholder="Filtrar por cliente, projeto ou projetista">
+                <button class="rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-fog" type="submit">Filtrar</button>
+            </form>
+            <div class="inline-grid w-fit grid-cols-2 rounded-md border border-line bg-fog p-1 text-sm font-semibold">
+                <a class="rounded px-3 py-2 text-center <?= $layout === 'kanban' ? 'bg-white text-ink shadow-sm' : 'text-slate-500 hover:text-ink' ?>" href="/projects.php<?= e(projects_query_args(['layout' => 'kanban', 'stage' => null, 'view' => null])) ?>">Kanban</a>
+                <a class="rounded px-3 py-2 text-center <?= $layout === 'table' ? 'bg-white text-ink shadow-sm' : 'text-slate-500 hover:text-ink' ?>" href="/projects.php<?= e(projects_query_args(['layout' => 'table', 'stage' => $stage, 'view' => $view ?: 'active'])) ?>">Tabela</a>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-fog" href="<?= $layout === 'kanban' ? '/export.php?type=projects' : '/export.php?type=stage&stage=' . e($stage) . '&view=' . e($view) ?>">Exportar</a>
+            <?php if ($layout === 'kanban' ? (can_create_project($user, 'PROJETO') || can_create_project($user, 'ASSISTENCIA')) : $canCreate): ?>
+                <a class="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white" href="/project-form.php?stage=<?= e($layout === 'kanban' ? 'PROJETO' : $stage) ?>"><?= ($layout !== 'kanban' && $stage === 'ASSISTENCIA') ? 'Criar assistência' : 'Criar projeto' ?></a>
+            <?php endif; ?>
+        </div>
     </div>
+
+    <?php if ($layout === 'kanban'): ?>
+        <div id="kanban-scroll" class="cursor-grab overflow-x-auto pb-2 active:cursor-grabbing">
+            <div class="flex min-w-max gap-3">
+                <?php foreach ($allowedStages as $columnStage): ?>
+                    <?php
+                    $columnProjects = $kanbanByStage[$columnStage] ?? [];
+                    $columnCount = count($columnProjects);
+                    $highlight = $stage === $columnStage;
+                    ?>
+                    <section id="col-<?= e($columnStage) ?>" class="flex w-72 shrink-0 flex-col rounded-lg bg-white shadow-sm <?= $highlight ? 'border-2' : 'border border-line' ?>" <?= $highlight ? 'style="border-color:' . e($primaryColor) . '"' : '' ?>>
+                        <header class="flex items-center justify-between border-b border-line px-3 py-3" style="background: color-mix(in srgb, <?= e($primaryColor) ?> 8%, white)">
+                            <div>
+                                <h2 class="text-sm font-bold"><?= e(stage_label($columnStage)) ?></h2>
+                                <p class="text-xs text-slate-500"><?= $columnCount ?> <?= $columnCount === 1 ? 'projeto' : 'projetos' ?></p>
+                            </div>
+                            <span class="grid h-8 min-w-8 place-items-center rounded-full px-2 text-xs font-bold text-white" style="background:<?= e($primaryColor) ?>"><?= $columnCount ?></span>
+                        </header>
+                        <div class="js-kanban-column flex max-h-[calc(100vh-280px)] min-h-40 flex-col gap-2 overflow-y-auto p-2 transition"
+                            data-kanban-column="<?= e($columnStage) ?>"
+                            data-stage-label="<?= e(stage_label($columnStage)) ?>">
+                            <?php if (!$columnProjects): ?>
+                                <div class="rounded-md border border-dashed border-line bg-fog p-4 text-center text-xs text-slate-500" data-empty-column="1">Nenhum projeto nesta etapa.</div>
+                            <?php endif; ?>
+                            <?php foreach ($columnProjects as $project): ?>
+                                <?php
+                                $cardStage = $project['current_stage'];
+                                $daysInStage = project_days_in_stage($project);
+                                $isStale = project_is_stale($project);
+                                $statusLabel = project_status_for_stage($project, $cardStage);
+                                ?>
+                                <button type="button"
+                                    class="js-kanban-card w-full <?= $canDragKanban ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer' ?> rounded-md border border-line bg-white p-3 text-left shadow-sm transition hover:border-ink/30 hover:shadow-md"
+                                    draggable="<?= $canDragKanban ? 'true' : 'false' ?>"
+                                    data-id="<?= (int) $project['id'] ?>"
+                                    data-stage="<?= e($cardStage) ?>"
+                                    data-client="<?= e($project['client_name']) ?>">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <strong class="text-sm leading-snug"><?= e($project['client_name']) ?></strong>
+                                        <?php if ($isStale): ?>
+                                            <span class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800" title="Parado há <?= $daysInStage ?> dias">!</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-600"><?= e($project['project_name']) ?></p>
+                                    <div class="mt-2 flex flex-wrap gap-1.5">
+                                        <span class="rounded-full bg-fog px-2 py-0.5 text-[10px] font-semibold text-slate-600"><?= e($statusLabel) ?></span>
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold <?= $isStale ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600' ?>"><?= $daysInStage ?>d</span>
+                                    </div>
+                                    <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                                        <span class="truncate"><?= e($project['designer_name'] ?: 'Sem projetista') ?></span>
+                                        <?php if ((float) ($project['closed_value'] ?? 0) > 0): ?>
+                                            <span class="shrink-0 font-semibold text-emerald-800"><?= money_br($project['closed_value']) ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    <?php else: ?>
 
     <?php if ($stage !== 'FINALIZADO'): ?>
         <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit <?= $stage === 'NEGOCIACAO' ? 'sm:grid-cols-3' : 'sm:grid-cols-2' ?>">
-            <a class="rounded-md px-4 py-2 <?= $view === 'active' || $view === '' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=<?= e($stage) ?>&view=active">
+            <a class="rounded-md px-4 py-2 <?= $view === 'active' || $view === '' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active">
                 <?= e(stage_label($stage)) ?> em andamento <span class="ml-2 opacity-70"><?= $activeCount ?></span>
             </a>
-            <a class="rounded-md px-4 py-2 <?= $view === 'completed' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=<?= e($stage) ?>&view=completed">
+            <a class="rounded-md px-4 py-2 <?= $view === 'completed' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=completed">
                 <?= e(stage_label($stage)) ?> finalizados <span class="ml-2 opacity-70"><?= $completedCount ?></span>
             </a>
             <?php if ($stage === 'NEGOCIACAO'): ?>
-            <a class="rounded-md px-4 py-2 <?= $view === 'desistidas' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?stage=NEGOCIACAO&view=desistidas">
+            <a class="rounded-md px-4 py-2 <?= $view === 'desistidas' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=NEGOCIACAO&view=desistidas">
                 Desistidas <span class="ml-2 opacity-70"><?= $desistidasCount ?></span>
             </a>
             <?php endif; ?>
@@ -259,7 +356,25 @@ require __DIR__ . '/../app/includes/sidebar.php';
             </table>
         </div>
     </div>
+    <?php endif; ?>
 </section>
+
+<div id="project-drawer" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+    <div id="project-drawer-backdrop" class="absolute inset-0 bg-ink/40"></div>
+    <aside class="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-line bg-white shadow-2xl">
+        <div class="flex items-center justify-between border-b border-line px-4 py-4">
+            <div class="min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Detalhes do projeto</p>
+                <h2 id="drawer-title" class="truncate text-lg font-bold">Carregando...</h2>
+            </div>
+            <button type="button" id="drawer-close" class="grid h-10 w-10 place-items-center rounded-md hover:bg-fog" aria-label="Fechar">✕</button>
+        </div>
+        <div id="drawer-body" class="flex-1 overflow-y-auto p-4">
+            <div class="grid gap-3 text-sm text-slate-500">Carregando...</div>
+        </div>
+        <div id="drawer-actions" class="border-t border-line bg-fog/50 p-4"></div>
+    </aside>
+</div>
 
 <!-- Container de notificações (toast) -->
 <div id="toast-root" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
@@ -319,6 +434,389 @@ require __DIR__ . '/../app/includes/sidebar.php';
         return resp.json();
     }
 
+    const drawer = document.getElementById('project-drawer');
+    const drawerBackdrop = document.getElementById('project-drawer-backdrop');
+    const drawerClose = document.getElementById('drawer-close');
+    const drawerTitle = document.getElementById('drawer-title');
+    const drawerBody = document.getElementById('drawer-body');
+    const drawerActions = document.getElementById('drawer-actions');
+    let activeDrawerId = 0;
+
+    function findProjectRow(id) {
+        return document.querySelector('.js-status-form[data-id="' + id + '"]')?.closest('tr') || null;
+    }
+
+    function findKanbanCard(id) {
+        return document.querySelector('.js-kanban-card[data-id="' + id + '"]');
+    }
+
+    function updateKanbanColumnState(column) {
+        if (!column) return;
+        const cards = column.querySelectorAll('.js-kanban-card');
+        const empty = column.querySelector('[data-empty-column]');
+        if (!cards.length && !empty) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'rounded-md border border-dashed border-line bg-fog p-4 text-center text-xs text-slate-500';
+            placeholder.dataset.emptyColumn = '1';
+            placeholder.textContent = 'Nenhum projeto nesta etapa.';
+            column.appendChild(placeholder);
+        }
+        if (cards.length && empty) {
+            empty.remove();
+        }
+
+        const section = column.closest('section');
+        const countText = section?.querySelector('header p');
+        const countBadge = section?.querySelector('header span');
+        const label = cards.length === 1 ? 'projeto' : 'projetos';
+        if (countText) countText.textContent = cards.length + ' ' + label;
+        if (countBadge) countBadge.textContent = cards.length;
+    }
+
+    function moveKanbanCard(card, fromStage, toStage, prepend = true) {
+        if (!card) return;
+        const origin = document.querySelector('[data-kanban-column="' + fromStage + '"]');
+        const target = document.querySelector('[data-kanban-column="' + toStage + '"]');
+        if (target) {
+            const empty = target.querySelector('[data-empty-column]');
+            if (empty) empty.remove();
+            if (prepend) {
+                target.prepend(card);
+            } else {
+                target.appendChild(card);
+            }
+            card.dataset.stage = toStage;
+            updateKanbanColumnState(origin);
+            updateKanbanColumnState(target);
+        } else {
+            card.remove();
+            updateKanbanColumnState(origin);
+        }
+    }
+
+    function fadeRemoveElement(el) {
+        if (!el) return;
+        el.style.transition = 'opacity .3s';
+        el.style.opacity = '0.4';
+        setTimeout(function () {
+            if (el.style.opacity === '0.4') el.remove();
+        }, 6200);
+    }
+
+    async function handleProjectMove(id, fromStage, undoRow, undoCard, toStage = null) {
+        const payload = { id };
+        if (toStage) payload.to_stage = toStage;
+        const res = await postForm('/project-move.php', payload);
+        if (!res.ok) {
+            showToast(res.error || 'Não foi possível mover.', null);
+            return null;
+        }
+
+        fadeRemoveElement(undoRow);
+        if (undoCard && res.to_stage) {
+            moveKanbanCard(undoCard, res.from_stage, res.to_stage);
+        } else if (undoCard) {
+            fadeRemoveElement(undoCard);
+        }
+
+        showToast(res.message || 'Movido com sucesso.', async function () {
+            const undo = await postForm('/project-move-undo.php', {
+                id, from_stage: res.from_stage, to_stage: res.to_stage,
+            });
+            if (undo.ok) {
+                if (undoRow) undoRow.style.opacity = '1';
+                if (undoCard && res.from_stage) {
+                    moveKanbanCard(undoCard, res.to_stage, res.from_stage);
+                }
+                showToast('Movimentação desfeita.', null);
+                if (activeDrawerId === id) openDrawer(id);
+            } else {
+                showToast(undo.error || 'Não foi possível desfazer.', null);
+            }
+        });
+
+        if (activeDrawerId === id) closeDrawer();
+        return res;
+    }
+
+    function renderDrawer(data) {
+        const p = data.project;
+        drawerTitle.textContent = p.client_name + ' · ' + p.project_name;
+
+        let html = '';
+        html += '<div class="flex flex-wrap gap-2">';
+        html += '<span class="rounded-full bg-ink px-3 py-1 text-xs font-bold text-white">' + escapeHtml(p.current_stage_label) + '</span>';
+        if (p.is_stale) {
+            html += '<span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">Parado há ' + p.days_in_stage + ' dias</span>';
+        } else {
+            html += '<span class="rounded-full bg-fog px-3 py-1 text-xs font-semibold text-slate-600">' + p.days_in_stage + ' dias nesta etapa</span>';
+        }
+        html += '</div>';
+
+        html += '<div class="mt-4 grid gap-3 rounded-lg border border-line bg-fog p-3 text-sm">';
+        html += '<div class="flex items-center justify-between gap-2"><span class="text-slate-500">Projetista</span><strong>' + escapeHtml(p.designer_name) + '</strong></div>';
+        html += '<div class="flex items-center justify-between gap-2"><span class="text-slate-500">Valor fechado</span><strong>' + escapeHtml(p.closed_value_label) + '</strong></div>';
+        if (p.client_phone) {
+            html += '<div class="flex items-center justify-between gap-2"><span class="text-slate-500">Telefone</span><span>' + escapeHtml(p.client_phone) + '</span></div>';
+        }
+        html += '</div>';
+
+        if (p.can_edit && p.status_field && p.status_options.length) {
+            html += '<div class="mt-4"><label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Status</label>';
+            html += '<select class="js-drawer-status min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink" data-id="' + p.id + '" data-stage="' + escapeHtml(p.current_stage) + '" data-prev="' + escapeHtml(p.status) + '">';
+            p.status_options.forEach(function (opt) {
+                html += '<option value="' + escapeHtml(opt) + '"' + (opt === p.status ? ' selected' : '') + '>' + escapeHtml(opt) + '</option>';
+            });
+            html += '</select></div>';
+        } else {
+            html += '<div class="mt-4 rounded-lg border border-line p-3 text-sm"><span class="text-slate-500">Status</span><strong class="mt-1 block">' + escapeHtml(p.status) + '</strong></div>';
+        }
+
+        html += '<div class="mt-4"><h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Datas</h3><div class="mt-2 grid gap-2">';
+        p.dates.forEach(function (item) {
+            html += '<div class="flex items-center justify-between rounded-md border border-line bg-white px-3 py-2 text-sm"><span class="text-slate-500">' + escapeHtml(item.label) + '</span><span>' + escapeHtml(item.value) + '</span></div>';
+        });
+        html += '</div></div>';
+
+        if (p.notes) {
+            html += '<div class="mt-4 rounded-lg border border-line bg-white p-3 text-sm"><span class="text-slate-500">Observações</span><p class="mt-1">' + escapeHtml(p.notes) + '</p></div>';
+        }
+
+        html += '<div class="mt-4"><h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Histórico recente</h3><div class="mt-2 grid gap-2">';
+        if (!data.history.length) {
+            html += '<div class="rounded-md border border-line p-3 text-sm text-slate-500">Nenhum histórico ainda.</div>';
+        }
+        data.history.forEach(function (row) {
+            html += '<article class="rounded-md border border-line bg-white p-3 text-sm">';
+            html += '<strong>' + escapeHtml(row.action) + '</strong>';
+            html += '<p class="mt-1 text-xs text-slate-500">' + escapeHtml(row.created_at) + ' · ' + escapeHtml(row.user_name);
+            if (row.from_stage) html += ' · ' + escapeHtml(row.from_stage) + ' → ' + escapeHtml(row.to_stage);
+            html += '</p>';
+            if (row.notes) html += '<p class="mt-1">' + escapeHtml(row.notes) + '</p>';
+            html += '</article>';
+        });
+        html += '</div></div>';
+
+        drawerBody.innerHTML = html;
+
+        const statusSelect = drawerBody.querySelector('.js-drawer-status');
+        if (statusSelect) {
+            statusSelect.addEventListener('change', async function () {
+                const id = statusSelect.dataset.id;
+                const stage = statusSelect.dataset.stage;
+                const oldStatus = statusSelect.dataset.prev;
+                const newStatus = statusSelect.value;
+                statusSelect.disabled = true;
+                try {
+                    const res = await postForm('/project-status.php', { id, stage, view: 'active', status: newStatus });
+                    if (!res.ok) {
+                        statusSelect.value = oldStatus;
+                        showToast(res.error || 'Não foi possível salvar.', null);
+                    } else {
+                        statusSelect.dataset.prev = newStatus;
+                        showToast('Status salvo.', null);
+                        const card = findKanbanCard(id);
+                        if (card) {
+                            const badge = card.querySelector('.rounded-full.bg-fog');
+                            if (badge) badge.textContent = newStatus;
+                        }
+                    }
+                } catch (e) {
+                    statusSelect.value = oldStatus;
+                    showToast('Erro de conexão.', null);
+                } finally {
+                    statusSelect.disabled = false;
+                }
+            });
+        }
+
+        let actions = '<div class="grid gap-2 sm:grid-cols-2">';
+        if (p.whatsapp_url) {
+            actions += '<a href="' + escapeHtml(p.whatsapp_url) + '" target="_blank" rel="noopener" class="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 text-sm font-bold text-emerald-700 hover:bg-emerald-100">WhatsApp</a>';
+        }
+        if (p.can_edit) {
+            actions += '<a href="/project-form.php?id=' + p.id + '" class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-white">Editar</a>';
+        }
+        actions += '<a href="/project-history.php?id=' + p.id + '" class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-white">Histórico completo</a>';
+        actions += '</div>';
+
+        if (p.can_move && p.next_stage_label) {
+            actions += '<button type="button" class="js-drawer-move mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white hover:opacity-95" data-id="' + p.id + '" data-from="' + escapeHtml(p.current_stage) + '">Enviar para ' + escapeHtml(p.next_stage_label) + '</button>';
+        } else if (p.move_error) {
+            actions += '<p class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">' + escapeHtml(p.move_error) + '</p>';
+        }
+
+        drawerActions.innerHTML = actions;
+
+        const moveBtn = drawerActions.querySelector('.js-drawer-move');
+        if (moveBtn) {
+            moveBtn.addEventListener('click', async function () {
+                moveBtn.disabled = true;
+                const id = moveBtn.dataset.id;
+                const fromStage = moveBtn.dataset.from;
+                await handleProjectMove(id, fromStage, findProjectRow(id), findKanbanCard(id));
+                moveBtn.disabled = false;
+            });
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    async function openDrawer(id) {
+        activeDrawerId = id;
+        drawer.classList.remove('hidden');
+        drawer.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('overflow-hidden');
+        drawerTitle.textContent = 'Carregando...';
+        drawerBody.innerHTML = '<div class="text-sm text-slate-500">Carregando...</div>';
+        drawerActions.innerHTML = '';
+
+        try {
+            const resp = await fetch('/project-detail.php?id=' + encodeURIComponent(id), {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await resp.json();
+            if (!data.ok) {
+                showToast(data.error || 'Não foi possível carregar.', null);
+                closeDrawer();
+                return;
+            }
+            renderDrawer(data);
+        } catch (e) {
+            showToast('Erro de conexão.', null);
+            closeDrawer();
+        }
+    }
+
+    function closeDrawer() {
+        activeDrawerId = 0;
+        drawer.classList.add('hidden');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('overflow-hidden');
+    }
+
+    const kanbanStages = <?= json_encode($allowedStages) ?>;
+    const kanbanScroll = document.getElementById('kanban-scroll');
+    let draggingCard = null;
+    let dragStartedAt = 0;
+
+    function stageDistance(fromStage, toStage) {
+        return Math.abs(kanbanStages.indexOf(fromStage) - kanbanStages.indexOf(toStage));
+    }
+
+    function clearDropState() {
+        document.querySelectorAll('.js-kanban-column').forEach(function (column) {
+            column.classList.remove('ring-2', 'ring-ink/30', 'bg-emerald-50/40');
+        });
+    }
+
+    document.querySelectorAll('.js-kanban-card').forEach(function (card) {
+        card.addEventListener('dragstart', function (ev) {
+            draggingCard = card;
+            dragStartedAt = Date.now();
+            card.classList.add('opacity-50', 'scale-[0.99]');
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', card.dataset.id);
+        });
+
+        card.addEventListener('dragend', function () {
+            card.classList.remove('opacity-50', 'scale-[0.99]');
+            clearDropState();
+            setTimeout(function () {
+                draggingCard = null;
+            }, 50);
+        });
+
+        card.addEventListener('click', function () {
+            if (Date.now() - dragStartedAt < 250) return;
+            openDrawer(card.dataset.id);
+        });
+    });
+
+    document.querySelectorAll('.js-kanban-column').forEach(function (column) {
+        column.addEventListener('dragover', function (ev) {
+            if (!draggingCard) return;
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            clearDropState();
+            column.classList.add('ring-2', 'ring-ink/30', 'bg-emerald-50/40');
+        });
+
+        column.addEventListener('dragleave', function (ev) {
+            if (!column.contains(ev.relatedTarget)) {
+                column.classList.remove('ring-2', 'ring-ink/30', 'bg-emerald-50/40');
+            }
+        });
+
+        column.addEventListener('drop', async function (ev) {
+            ev.preventDefault();
+            clearDropState();
+            const card = draggingCard;
+            if (!card) return;
+
+            const id = card.dataset.id;
+            const fromStage = card.dataset.stage;
+            const toStage = column.dataset.kanbanColumn;
+            if (!id || !fromStage || !toStage || fromStage === toStage) return;
+
+            if (stageDistance(fromStage, toStage) > 1) {
+                showToast('Mova uma etapa por vez para manter o fluxo correto.', null);
+                return;
+            }
+
+            card.classList.add('pointer-events-none');
+            try {
+                await handleProjectMove(id, fromStage, null, card, toStage);
+            } catch (e) {
+                showToast('Erro de conexão.', null);
+            } finally {
+                card.classList.remove('pointer-events-none');
+            }
+        });
+    });
+
+    if (kanbanScroll) {
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartScroll = 0;
+        kanbanScroll.addEventListener('pointerdown', function (ev) {
+            if (ev.button !== 0 || ev.target.closest('.js-kanban-card, a, button, input, select, textarea')) return;
+            isPanning = true;
+            panStartX = ev.clientX;
+            panStartScroll = kanbanScroll.scrollLeft;
+            kanbanScroll.setPointerCapture(ev.pointerId);
+        });
+        kanbanScroll.addEventListener('pointermove', function (ev) {
+            if (!isPanning) return;
+            kanbanScroll.scrollLeft = panStartScroll - (ev.clientX - panStartX);
+        });
+        function stopPan() {
+            isPanning = false;
+        }
+        kanbanScroll.addEventListener('pointerup', stopPan);
+        kanbanScroll.addEventListener('pointercancel', stopPan);
+        kanbanScroll.addEventListener('pointerleave', stopPan);
+    }
+
+    if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape' && !drawer.classList.contains('hidden')) closeDrawer();
+    });
+
+    if (window.location.hash) {
+        const targetColumn = document.querySelector(window.location.hash);
+        if (targetColumn) {
+            targetColumn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    }
+
     // ---- Mudança de status ----
     document.querySelectorAll('.js-status-select').forEach(function (select) {
         select.addEventListener('change', async function () {
@@ -361,38 +859,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
             ev.preventDefault();
             const id = form.dataset.id;
             const fromStage = form.dataset.from;
-            const client = form.dataset.client || 'Projeto';
             const btn = form.querySelector('button[type="submit"]');
             const row = form.closest('tr');
+            const card = findKanbanCard(id);
             if (btn) btn.disabled = true;
 
             try {
-                const res = await postForm('/project-move.php', { id });
-                if (!res.ok) {
-                    showToast(res.error || 'Não foi possível mover.', null);
-                    if (btn) btn.disabled = false;
-                    return;
-                }
-                // A linha sai deste estágio: removemos visualmente
-                if (row) row.style.transition = 'opacity .3s';
-                if (row) row.style.opacity = '0.4';
-
-                showToast(res.message || 'Movido com sucesso.', async function () {
-                    const undo = await postForm('/project-move-undo.php', {
-                        id, from_stage: res.from_stage, to_stage: res.to_stage,
-                    });
-                    if (undo.ok) {
-                        if (row) row.style.opacity = '1';
-                        showToast('Movimentação desfeita.', null);
-                    } else {
-                        showToast(undo.error || 'Não foi possível desfazer.', null);
-                    }
-                });
-
-                // Remove a linha de vez após a janela de desfazer
-                setTimeout(function () {
-                    if (row && row.style.opacity === '0.4') row.remove();
-                }, 6200);
+                const res = await handleProjectMove(id, fromStage, row, card);
+                if (!res && btn) btn.disabled = false;
             } catch (e) {
                 showToast('Erro de conexão.', null);
                 if (btn) btn.disabled = false;
