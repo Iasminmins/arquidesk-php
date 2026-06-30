@@ -329,7 +329,7 @@ $receivedDelta = metric_delta($totalReceived, $prevTotalReceived);
 $commissionValue = $totalReceived * $commissionRate;
 $commissionDelta = metric_delta($commissionValue, $prevCommission);
 
-$pipelineSql = 'select current_stage, count(*) as total from client_projects where company_id = ? and (negotiation_status is null or negotiation_status != ?)';
+$pipelineSql = 'select current_stage, count(*) as total, coalesce(sum(closed_value), 0) as total_value from client_projects where company_id = ? and (negotiation_status is null or negotiation_status != ?)';
 $pipelineParams = [$companyId, 'Desistida'];
 if ($user['role'] === 'PROJETISTA') {
     $pipelineSql .= ' and designer_id = ?';
@@ -339,11 +339,14 @@ $pipelineSql .= ' group by current_stage';
 $pipelineStmt = db()->prepare($pipelineSql);
 $pipelineStmt->execute($pipelineParams);
 $pipelineCounts = [];
+$pipelineValues = [];
 foreach ($pipelineStmt->fetchAll() as $row) {
     $pipelineCounts[$row['current_stage']] = (int) $row['total'];
+    $pipelineValues[$row['current_stage']] = (float) $row['total_value'];
 }
 $pipelineTotal = max(1, array_sum($pipelineCounts));
 $pipelineActive = max(0, array_sum($pipelineCounts) - ($pipelineCounts['FINALIZADO'] ?? 0));
+$pipelineTotalValue = array_sum($pipelineValues);
 
 $performanceSql = 'select to_stage, count(*) as total
     from flow_history fh

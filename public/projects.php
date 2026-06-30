@@ -582,6 +582,20 @@ require __DIR__ . '/../app/includes/sidebar.php';
             html += '<div class="mt-4 rounded-lg border border-line bg-white p-3 text-sm"><span class="text-slate-500">Observações</span><p class="mt-1">' + escapeHtml(p.notes) + '</p></div>';
         }
 
+        // ---- Arquivos do projeto ----
+        html += '<div class="mt-4">';
+        html += '<h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Arquivos</h3>';
+        html += '<div id="js-drawer-files" class="mt-2"></div>';
+        if (p.can_edit) {
+            html += '<div class="mt-2 flex items-center gap-2">';
+            html += '<select id="js-file-cat" class="min-h-9 flex-1 rounded-md border border-line bg-white px-2 text-xs">';
+            html += '<option value="GERAL">Geral</option><option value="PLANTA">Planta</option><option value="CONTRATO">Contrato</option><option value="MEDICAO">MediÃ§Ã£o</option><option value="MONTAGEM">Montagem</option><option value="FOTO">Foto</option><option value="OUTRO">Outro</option>';
+            html += '</select>';
+            html += '<label class="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-bold text-white hover:opacity-90"><input type="file" id="js-file-input" class="sr-only" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip" multiple>+ Arquivo</label>';
+            html += '</div>';
+        }
+        html += '</div>';
+
         html += '<div class="mt-4"><h3 class="text-xs font-bold uppercase tracking-wide text-slate-500">Histórico recente</h3><div class="mt-2 grid gap-2">';
         if (!data.history.length) {
             html += '<div class="rounded-md border border-line p-3 text-sm text-slate-500">Nenhum histórico ainda.</div>';
@@ -598,6 +612,14 @@ require __DIR__ . '/../app/includes/sidebar.php';
         html += '</div></div>';
 
         drawerBody.innerHTML = html;
+        loadDrawerFiles(p.id);
+        const fileInput = drawerBody.querySelector('#js-file-input');
+        if (fileInput) {
+            fileInput.addEventListener('change', function () {
+                uploadFiles(Array.from(fileInput.files), p.id);
+                fileInput.value = '';
+            });
+        }
 
         const statusSelect = drawerBody.querySelector('.js-drawer-status');
         if (statusSelect) {
@@ -638,6 +660,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             actions += '<a href="/project-form.php?id=' + p.id + '" class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-white">Editar</a>';
         }
         actions += '<a href="/project-history.php?id=' + p.id + '" class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-white">Histórico completo</a>';
+        actions += '<a href="/project-files.php?id=' + p.id + '" class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-white">Arquivos</a>';
         actions += '</div>';
 
         if (p.can_move && p.next_stage_label) {
@@ -666,6 +689,76 @@ require __DIR__ . '/../app/includes/sidebar.php';
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    }
+
+    async function loadDrawerFiles(projectId) {
+        const container = document.getElementById('js-drawer-files');
+        if (!container) return;
+        container.innerHTML = '<p class="text-xs text-slate-400">Carregando...</p>';
+        try {
+            const resp = await fetch('/project-file-list.php?project_id=' + encodeURIComponent(projectId), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
+            });
+            const data = await resp.json();
+            renderFileList(data.files || [], projectId);
+        } catch (e) {
+            const c = document.getElementById('js-drawer-files');
+            if (c) c.innerHTML = '<p class="text-xs text-red-500">Erro ao carregar arquivos.</p>';
+        }
+    }
+
+    function renderFileList(files, projectId) {
+        const container = document.getElementById('js-drawer-files');
+        if (!container) return;
+        if (!files.length) { container.innerHTML = '<p class="text-xs text-slate-400 py-1">Nenhum arquivo ainda.</p>'; return; }
+        let fHtml = '<div class="grid gap-1.5 mt-1">';
+        files.forEach(function (f) {
+            fHtml += '<div class="flex items-center gap-2 rounded-md border border-line bg-white p-2 text-xs">';
+            fHtml += f.is_image
+                ? '<img src="' + escapeHtml(f.url) + '" class="h-10 w-10 shrink-0 rounded object-cover" alt="">'
+                : '<span class="grid h-10 w-10 shrink-0 place-items-center rounded bg-fog text-base">ðŸ„</span>';
+            fHtml += '<div class="min-w-0 flex-1">';
+            fHtml += '<a href="' + escapeHtml(f.url) + '" target="_blank" rel="noopener" class="block truncate font-semibold hover:underline">' + escapeHtml(f.original_name) + '</a>';
+            fHtml += '<span class="text-slate-400">' + escapeHtml(f.category_label) + ' Â· ' + escapeHtml(f.file_size_label) + ' Â· ' + escapeHtml(f.created_at) + '</span>';
+            fHtml += '</div>';
+            fHtml += '<button type="button" class="js-delete-file shrink-0 px-1 text-red-400 hover:text-red-600" data-id="' + f.id + '" data-project="' + projectId + '" aria-label="Excluir">âœ•</button>';
+            fHtml += '</div>';
+        });
+        fHtml += '</div>';
+        container.innerHTML = fHtml;
+        container.querySelectorAll('.js-delete-file').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+                if (!confirm('Excluir este arquivo?')) return;
+                btn.disabled = true;
+                const res = await postForm('/project-file-delete.php', { file_id: btn.dataset.id });
+                if (res.ok) { loadDrawerFiles(btn.dataset.project); showToast('Arquivo excluÃ­do.', null); }
+                else { showToast(res.error || 'Erro ao excluir.', null); btn.disabled = false; }
+            });
+        });
+    }
+
+    async function uploadFiles(files, projectId) {
+        if (!files.length) return;
+        const cat = document.getElementById('js-file-cat');
+        let success = 0;
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append('csrf_token', csrf);
+            formData.append('project_id', projectId);
+            formData.append('category', cat ? cat.value : 'GERAL');
+            formData.append('file', file);
+            try {
+                const resp = await fetch('/project-file-upload.php', {
+                    method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, body: formData,
+                });
+                const data = await resp.json();
+                if (data.ok) { success++; } else { showToast(data.error || 'Erro ao enviar ' + file.name, null); }
+            } catch (e) { showToast('Erro de conexÃ£o.', null); }
+        }
+        if (success > 0) {
+            showToast(success + (success === 1 ? ' arquivo enviado.' : ' arquivos enviados.'), null);
+            loadDrawerFiles(projectId);
+        }
     }
 
     async function openDrawer(id) {

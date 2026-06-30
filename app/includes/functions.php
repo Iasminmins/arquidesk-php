@@ -102,6 +102,8 @@ function role_nav(string $role): array
             '/projects.php?stage=ASSISTENCIA' => 'Assistência',
             '/projects.php?stage=FINALIZADO' => 'Finalizados',
             '/finance.php' => 'Financeiro',
+            '/project-files.php' => 'Arquivos de Projetos',
+            '/pipeline-analysis.php' => 'Tempo por etapa',
             '/goals.php?mode=my-goal' => 'Minha Meta',
             '/import-export.php' => 'Minhas Exportações',
         ],
@@ -137,7 +139,9 @@ function role_nav(string $role): array
             '/projects.php?stage=ASSISTENCIA' => 'Assistência',
             '/projects.php?stage=FINALIZADO' => 'Finalizados',
             '/finance.php' => 'Financeiro',
+            '/project-files.php' => 'Arquivos de Projetos',
             '/goals.php' => 'Metas dos Projetistas',
+            '/pipeline-analysis.php' => 'Tempo por etapa',
             '/import-export.php' => 'Importar / Exportar',
             '/employees.php' => 'Funcionários',
             '/company-settings.php' => 'Configurações da Empresa',
@@ -580,4 +584,15 @@ function whatsapp_link(string $phone, bool $iconOnly = false): string
         return '<a href="' . $url . '" target="_blank" rel="noopener" title="Chamar no WhatsApp" class="inline-flex items-center">' . $icon . '</a>';
     }
     return '<a href="' . $url . '" target="_blank" rel="noopener" title="Chamar no WhatsApp" class="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700">' . $icon . '</a>';
+}
+
+function money_compact(float $value): string
+{
+    if ($value >= 1_000_000) {
+        return 'R$ ' . number_format($value / 1_000_000, 1, ',', '.') . 'M';
+    }
+    if ($value >= 1_000) {
+        return 'R$ ' . number_format($value / 1_000, 0, ',', '.') . 'k';
+    }
+    return $value > 0 ? money_br($value) : 'R$ 0';
 }

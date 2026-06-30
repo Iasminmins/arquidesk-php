@@ -1,24 +1,39 @@
 <?php
 
 require_once __DIR__ . '/../app/includes/auth.php';
+require_once __DIR__ . '/../app/includes/rate-limit.php';
 
 $loggedUser = current_user();
 if ($loggedUser) {
     redirect($loggedUser['role'] === 'SUPER_ADMIN' ? '/super-admin.php' : '/');
 }
 
+login_ensure_attempts_schema();
+
+$clientIp = login_client_ip();
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (login_user($email, $password)) {
+    if (login_is_rate_limited($clientIp)) {
+        $secs = login_seconds_until_unlock($clientIp);
+        $mins = max(1, (int) ceil($secs / 60));
+        $error = 'Muitas tentativas de acesso. Aguarde ' . $mins . ' ' . ($mins === 1 ? 'minuto' : 'minutos') . ' e tente novamente.';
+    } elseif (login_user($email, $password)) {
+        login_clear_attempts($clientIp);
         $loggedUser = current_user();
         redirect(($loggedUser['role'] ?? '') === 'SUPER_ADMIN' ? '/super-admin.php' : '/');
+    } else {
+        login_record_attempt($clientIp, $email);
+        $used = login_attempt_count($clientIp);
+        $remaining = max(0, LOGIN_MAX_ATTEMPTS - $used);
+        $error = 'E-mail ou senha inválidos.';
+        if ($remaining > 0 && $remaining <= 2) {
+            $error .= ' (' . $remaining . ' ' . ($remaining === 1 ? 'tentativa restante' : 'tentativas restantes') . ' antes do bloqueio temporário)';
+        }
     }
-
-    $error = 'E-mail ou senha inválidos.';
 }
 
 $pageTitle = 'Entrar no Arquidesk';
