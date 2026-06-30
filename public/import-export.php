@@ -24,31 +24,65 @@ $allPreviews = [];
 $summary = [];
 $errors = [];
 $importSuccess = '';
-$importType = $_POST['import_type'] ?? 'Completo';
+$importType = $_POST['import_type'] ?? 'Projetos';
+
+function normalize_import_key(string $value): string {
+    $value = trim($value);
+    $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+    if ($ascii !== false && $ascii !== '') {
+        $value = $ascii;
+    }
+    $value = mb_strtolower($value);
+    $value = preg_replace('/[^a-z0-9]+/', ' ', $value) ?? $value;
+    return trim($value);
+}
 
 function val(array $row, string $key): string {
     // Try exact match first, then alternative names
     $alts = [
         'Cliente' => ['cliente', 'client_name', 'Nome do cliente'],
         'Projeto' => ['projeto', 'project_name', 'Nome do projeto'],
-        'Projetista' => ['projetista', 'designer_name', 'Projetista responsavel'],
+        'Projetista' => ['projetista', 'designer_name', 'Projetista responsavel', 'Responsavel'],
         'Valor vendido' => ['valor', 'sold_value', 'valor_vendido'],
         'Forma de pagamento' => ['forma', 'payment_method', 'forma_pagamento'],
         'Data da venda' => ['data', 'sale_date', 'data_venda'],
         'Observacoes' => ['observacoes', 'notes', 'obs'],
         'Valor pago' => ['valor', 'amount', 'valor_pago'],
         'Data de pagamento' => ['data', 'payment_date', 'data_pagamento'],
-        'Numero do pagamento' => ['numero', 'payment_number'],
+        'Numero do pagamento' => ['numero', 'payment_number', 'Parcela'],
         'Nome do cliente' => ['cliente', 'client_name'],
         'Telefone' => ['telefone', 'phone', 'client_phone'],
         'Nome do projeto' => ['projeto', 'project_name'],
-        'Status' => ['status', 'project_status'],
+        'Status' => ['status', 'project_status', 'Status do projeto'],
         'Data de entrada' => ['data', 'entry_date'],
-        'Projetista responsavel' => ['projetista', 'designer_name'],
-        'Etapa desejada' => ['etapa', 'current_stage'],
+        'Projetista responsavel' => ['projetista', 'designer_name', 'Responsavel'],
+        'Etapa desejada' => ['etapa', 'current_stage', 'Etapa atual'],
+        'Data de apresentacao' => ['presentation_date', 'Data de apresentacao'],
+        'Status da negociacao' => ['negotiation_status', 'Status da negociacao'],
+        'Valor fechado' => ['closed_value'],
+        'Data de fechamento' => ['closing_date'],
+        'Status conferencia' => ['conference_status', 'Status conferencia'],
+        'Data envio fabrica' => ['sent_to_factory_date', 'Data de envio para fabrica'],
+        'Data faturamento' => ['billing_date'],
+        'Status montagem' => ['assembly_status', 'Status da montagem'],
+        'Data inicio montagem' => ['assembly_started_date', 'Data de inicio da montagem'],
+        'Data fim montagem' => ['assembly_finished_date', 'Data de finalizacao da montagem'],
+        'Status assistencia' => ['assistance_status', 'Status assistencia'],
+        'Data assistencia' => ['assistance_date', 'Data da assistencia'],
+        'Data pedido' => ['order_date'],
         'Data de medicao' => ['data_medicao', 'measurement_date', 'Data de medição'],
     ];
     if (isset($row[$key]) && trim((string) $row[$key]) !== '') return trim((string) $row[$key]);
+    $normalizedRow = [];
+    foreach ($row as $rowKey => $rowValue) {
+        $normalizedRow[normalize_import_key((string) $rowKey)] = $rowValue;
+    }
+    foreach (array_merge([$key], $alts[$key] ?? []) as $lookupKey) {
+        $normalizedKey = normalize_import_key((string) $lookupKey);
+        if (isset($normalizedRow[$normalizedKey]) && trim((string) $normalizedRow[$normalizedKey]) !== '') {
+            return trim((string) $normalizedRow[$normalizedKey]);
+        }
+    }
     foreach ($alts[$key] ?? [] as $alt) {
         if (isset($row[$alt]) && trim((string) $row[$alt]) !== '') return trim((string) $row[$alt]);
     }
@@ -72,11 +106,63 @@ function normalize_name(string $name): string {
     return strtr($name, $map);
 }
 
+function designer_key(string $name): string {
+    return normalize_import_key($name);
+}
+
+function normalize_stage_value(string $stage): string {
+    $key = normalize_import_key($stage);
+    $stages = [
+        'projeto' => 'PROJETO',
+        'projetos' => 'PROJETO',
+        'negociacao' => 'NEGOCIACAO',
+        'conferencia' => 'CONFERENCIA',
+        'montagem' => 'MONTAGEM',
+        'assistencia' => 'ASSISTENCIA',
+        'finalizado' => 'FINALIZADO',
+        'finalizados' => 'FINALIZADO',
+    ];
+    return $stages[$key] ?? 'PROJETO';
+}
+
+function import_record_key(string $clientName, string $projectName): string {
+    return normalize_import_key($clientName) . '|' . normalize_import_key($projectName);
+}
+
+function complete_import_tabs(): array {
+    return [
+        ['key' => 'projects', 'label' => 'Projetos', 'aliases' => ['Projetos']],
+        ['key' => 'sales', 'label' => 'Vendas financeiras', 'aliases' => ['Vendas financeiras', 'Vendas', 'Financeiro']],
+        ['key' => 'payments', 'label' => 'Pagamentos financeiros', 'aliases' => ['Pagamentos financeiros', 'Pagamentos recebidos', 'Pagamentos']],
+        ['key' => 'goals', 'label' => 'Metas dos projetistas', 'aliases' => ['Metas dos projetistas', 'Metas'], 'admin_only' => true],
+        ['key' => 'employees', 'label' => 'Funcionarios', 'aliases' => ['Funcionarios', 'Funcionários'], 'admin_only' => true],
+    ];
+}
+
+function import_sheet(array $rawSheets, array $aliases): ?array {
+    $normalizedSheets = [];
+    foreach ($rawSheets as $sheetName => $rows) {
+        $normalizedSheets[normalize_import_key((string) $sheetName)] = $rows;
+    }
+    foreach ($aliases as $alias) {
+        $key = normalize_import_key($alias);
+        if (isset($normalizedSheets[$key])) {
+            return $normalizedSheets[$key];
+        }
+    }
+    return null;
+}
+
+function import_sheet_rows(array $rawSheets, array $aliases): array {
+    $sheet = import_sheet($rawSheets, $aliases);
+    return $sheet ? xlsx_to_assoc($sheet) : [];
+}
+
 function build_designer_map(int $companyId): array {
     $stmt = db()->prepare("select id, name from users where company_id = ? and active = 1");
     $stmt->execute([$companyId]);
     $map = [];
-    foreach ($stmt->fetchAll() as $r) { $map[normalize_name($r['name'])] = (int) $r['id']; }
+    foreach ($stmt->fetchAll() as $r) { $map[designer_key($r['name'])] = (int) $r['id']; }
     return $map;
 }
 
@@ -85,21 +171,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['import_file']) && $_
     $tmpPath = $_FILES['import_file']['tmp_name'];
     $ext = strtolower(pathinfo($_FILES['import_file']['name'], PATHINFO_EXTENSION));
 
-    if ($ext === 'xlsx' || $ext === 'xls') {
+    if ($ext === 'xlsx' && !class_exists('ZipArchive')) {
+        $errors[] = 'Importacao XLSX indisponivel: habilite a extensao PHP ZipArchive no servidor ou use CSV.';
+    } elseif ($ext === 'xlsx') {
         $rawSheets = read_xlsx($tmpPath);
         if ($importType === 'Completo') {
-            foreach (['Projetos', 'Vendas financeiras', 'Pagamentos financeiros', 'Metas dos projetistas', 'Funcionarios'] as $tab) {
-                if (isset($rawSheets[$tab])) {
-                    $data = xlsx_to_assoc($rawSheets[$tab]);
-                    if ($data) { $allPreviews[$tab] = $data; $summary[] = ['label' => $tab, 'count' => count($data)]; }
+            foreach (complete_import_tabs() as $tab) {
+                if (($tab['admin_only'] ?? false) && !$isAdmin) {
+                    continue;
+                }
+                $data = import_sheet_rows($rawSheets, $tab['aliases']);
+                if ($data) {
+                    $allPreviews[$tab['key']] = $data;
+                    $summary[] = ['label' => $tab['label'], 'count' => count($data)];
                 }
             }
-            $preview = $allPreviews['Projetos'] ?? [];
+            $preview = $allPreviews['projects'] ?? [];
         } else {
             $firstSheet = reset($rawSheets);
             if ($firstSheet) { $preview = xlsx_to_assoc($firstSheet); $summary[] = ['label' => $importType, 'count' => count($preview)]; }
         }
     } elseif ($ext === 'csv') {
+        if ($importType === 'Completo') {
+            $importType = 'Projetos';
+        }
         $preview = parse_csv_file($tmpPath);
         if ($preview) { $summary[] = ['label' => $importType, 'count' => count($preview)]; }
     }
@@ -114,6 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['import_file']) && $_
     $_SESSION['import_temp'] = $tempFile;
     $_SESSION['import_type'] = $importType;
     $_SESSION['import_ext'] = $ext;
+    $_SESSION['import_file_name'] = $_FILES['import_file']['name'] ?? 'upload';
 }
 
 function parse_csv_file(string $path): array {
@@ -150,36 +246,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
         $designerMap = build_designer_map($companyId);
         $successCount = 0;
         $errorCount = 0;
+        $parseBlocked = false;
 
         // Parse file
-        if ($ext === 'xlsx' || $ext === 'xls') {
+        if ($ext === 'xlsx' && !class_exists('ZipArchive')) {
+            $errors[] = 'Importacao XLSX indisponivel: habilite a extensao PHP ZipArchive no servidor ou use CSV.';
+            $parseBlocked = true;
+        } elseif ($ext === 'xlsx') {
             $rawSheets = read_xlsx($tempFile);
         }
 
+        if (!$parseBlocked) {
         try {
             db()->beginTransaction();
 
             // ---- FUNCIONARIOS (first, so designer map is updated) ----
-            if ($importType === 'Completo' && $isAdmin && isset($rawSheets['Funcionarios'])) {
-                $funcRows = xlsx_to_assoc($rawSheets['Funcionarios']);
+            $funcRows = [];
+            if ($importType === 'Completo' && $isAdmin && isset($rawSheets)) {
+                $funcRows = import_sheet_rows($rawSheets, ['Funcionarios', 'Funcionários']);
+            }
+            if ($funcRows) {
                 foreach ($funcRows as $row) {
                     $fname = val($row, 'Nome'); $femail = val($row, 'E-mail');
                     if (!$fname || !$femail) { $errorCount++; continue; }
-                    if (isset($designerMap[mb_strtolower($fname)])) continue; // already exists
+                    if (isset($designerMap[designer_key($fname)])) continue; // already exists
                     $frole = strtoupper(val($row, 'Permissao'));
                     if (!in_array($frole, ['PROJETISTA', 'CONFERENTE', 'ADMIN_EMPRESA'], true)) $frole = 'PROJETISTA';
                     $factive = !in_array(strtoupper(val($row, 'Ativo')), ['NAO', 'NÃO', 'FALSE', '0', 'Nao'], true);
                     $tempPass = password_hash(bin2hex(random_bytes(4)), PASSWORD_DEFAULT);
                     db()->prepare('insert into users (company_id, name, email, password_hash, role, active) values (?,?,?,?,?,?)')->execute([$companyId, $fname, $femail, $tempPass, $frole, $factive ? 1 : 0]);
-                    $designerMap[mb_strtolower($fname)] = (int) db()->lastInsertId();
+                    $designerMap[designer_key($fname)] = (int) db()->lastInsertId();
                     $successCount++;
                 }
             }
 
             // ---- PROJETOS ----
             $projectRows = [];
-            if ($importType === 'Completo' && isset($rawSheets['Projetos'])) {
-                $projectRows = xlsx_to_assoc($rawSheets['Projetos']);
+            if ($importType === 'Completo' && isset($rawSheets)) {
+                $projectRows = import_sheet_rows($rawSheets, ['Projetos']);
             } elseif ($importType === 'Projetos') {
                 $projectRows = ($ext === 'csv') ? parse_csv_file($tempFile) : (isset($rawSheets) ? xlsx_to_assoc(reset($rawSheets)) : []);
             }
@@ -187,10 +291,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
             foreach ($projectRows as $row) {
                 $clientName = val($row, 'Nome do cliente');
                 if (!$clientName) { $errorCount++; continue; }
-                $dName = mb_strtolower(trim(val($row, 'Projetista responsavel')));
+                $dName = designer_key(val($row, 'Projetista responsavel'));
                 $dId = $isDesigner ? (int) $user['id'] : ($designerMap[$dName] ?? null);
-                $wStage = strtoupper(val($row, 'Etapa desejada'));
-                $stage = $stageMap[$wStage] ?? 'PROJETO';
+                $stage = normalize_stage_value(val($row, 'Etapa desejada'));
                 $ins = db()->prepare('insert into client_projects (company_id, designer_id, client_name, client_address, client_phone, project_name, current_stage, project_status, entry_date, presentation_date, negotiation_status, new_proposal_value, closed_value, closing_date, conference_status, measurement_date, sent_to_factory_date, billing_date, assembly_status, assembly_started_date, assembly_finished_date, assistance_status, assistance_date, order_date, notes) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
                 $ins->execute([
                     $companyId, $dId, $clientName,
@@ -217,15 +320,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
                     dt($row, 'Data pedido'),
                     val($row, 'Observacoes') ?: null,
                 ]);
-                $pKey = mb_strtolower($clientName) . '|' . mb_strtolower(val($row, 'Nome do projeto'));
+                $pKey = import_record_key($clientName, val($row, 'Nome do projeto'));
                 $projectMap[$pKey] = (int) db()->lastInsertId();
                 $successCount++;
             }
 
             // ---- VENDAS ----
             $saleRows = [];
-            if ($importType === 'Completo' && isset($rawSheets['Vendas financeiras'])) {
-                $saleRows = xlsx_to_assoc($rawSheets['Vendas financeiras']);
+            if ($importType === 'Completo' && isset($rawSheets)) {
+                $saleRows = import_sheet_rows($rawSheets, ['Vendas financeiras', 'Vendas', 'Financeiro']);
             } elseif ($importType === 'Vendas') {
                 $saleRows = ($ext === 'csv') ? parse_csv_file($tempFile) : (isset($rawSheets) ? xlsx_to_assoc(reset($rawSheets)) : []);
             }
@@ -233,9 +336,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
             foreach ($saleRows as $row) {
                 $cName = val($row, 'Cliente'); $pName = val($row, 'Projeto');
                 if (!$cName) { $errorCount++; continue; }
-                $dName = mb_strtolower(trim(val($row, 'Projetista')));
+                $dName = designer_key(val($row, 'Projetista'));
                 $dId = $isDesigner ? (int) $user['id'] : ($designerMap[$dName] ?? null);
-                $pKey = mb_strtolower($cName) . '|' . mb_strtolower($pName);
+                $pKey = import_record_key($cName, $pName);
                 $linkedProjectId = $projectMap[$pKey] ?? null;
                 $ins = db()->prepare('insert into financial_sales (company_id, client_project_id, designer_id, client_name, project_name, sold_value, payment_method, sale_date, notes) values (?,?,?,?,?,?,?,?,?)');
                 $ins->execute([$companyId, $linkedProjectId, $dId, $cName, $pName, num($row, 'Valor vendido'), val($row, 'Forma de pagamento') ?: 'Pix', dt($row, 'Data da venda') ?? date('Y-m-d'), val($row, 'Observacoes') ?: null]);
@@ -245,8 +348,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
 
             // ---- PAGAMENTOS ----
             $payRows = [];
-            if ($importType === 'Completo' && isset($rawSheets['Pagamentos financeiros'])) {
-                $payRows = xlsx_to_assoc($rawSheets['Pagamentos financeiros']);
+            if ($importType === 'Completo' && isset($rawSheets)) {
+                $payRows = import_sheet_rows($rawSheets, ['Pagamentos financeiros', 'Pagamentos recebidos', 'Pagamentos']);
             } elseif ($importType === 'Pagamentos') {
                 $payRows = ($ext === 'csv') ? parse_csv_file($tempFile) : (isset($rawSheets) ? xlsx_to_assoc(reset($rawSheets)) : []);
             }
@@ -254,11 +357,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
             $existSales = db()->prepare('select id, client_name, project_name from financial_sales where company_id = ?');
             $existSales->execute([$companyId]);
             foreach ($existSales->fetchAll() as $s) {
-                $k = mb_strtolower(trim($s['client_name'])) . '|' . mb_strtolower(trim($s['project_name']));
+                $k = import_record_key($s['client_name'], $s['project_name']);
                 if (!isset($saleMap[$k])) $saleMap[$k] = (int) $s['id'];
             }
             foreach ($payRows as $i => $row) {
-                $k = mb_strtolower(trim(val($row, 'Cliente'))) . '|' . mb_strtolower(trim(val($row, 'Projeto')));
+                $k = import_record_key(val($row, 'Cliente'), val($row, 'Projeto'));
                 $saleId = $saleMap[$k] ?? null;
                 if (!$saleId) { $errorCount++; continue; }
                 $ins = db()->prepare('insert into financial_payments (company_id, financial_sale_id, payment_number, amount, payment_date) values (?,?,?,?,?)');
@@ -268,13 +371,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
 
             // ---- METAS ----
             $goalRows = [];
-            if ($importType === 'Completo' && $isAdmin && isset($rawSheets['Metas dos projetistas'])) {
-                $goalRows = xlsx_to_assoc($rawSheets['Metas dos projetistas']);
+            if ($importType === 'Completo' && $isAdmin && isset($rawSheets)) {
+                $goalRows = import_sheet_rows($rawSheets, ['Metas dos projetistas', 'Metas']);
             } elseif ($importType === 'Metas' && $isAdmin) {
                 $goalRows = ($ext === 'csv') ? parse_csv_file($tempFile) : (isset($rawSheets) ? xlsx_to_assoc(reset($rawSheets)) : []);
             }
             foreach ($goalRows as $row) {
-                $dName = mb_strtolower(trim(val($row, 'Projetista')));
+                $dName = designer_key(val($row, 'Projetista'));
                 $dId = $designerMap[$dName] ?? null;
                 if (!$dId) { $errorCount++; continue; }
                 $m = (int) num($row, 'Mes'); $y = (int) num($row, 'Ano'); $amt = num($row, 'Valor da meta');
@@ -291,7 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
             db()->commit();
             $totalRows = $successCount + $errorCount;
             db()->prepare('insert into import_batches (company_id,type,file_name,status,total_rows,success_rows,error_rows,created_by_user_id) values(?,?,?,?,?,?,?,?)')->execute([
-                $companyId, $importType, $_FILES['import_file']['name'] ?? 'upload', 'COMPLETED', $totalRows, $successCount, $errorCount, (int) $user['id'],
+                $companyId, $importType, $_SESSION['import_file_name'] ?? 'upload', 'COMPLETED', $totalRows, $successCount, $errorCount, (int) $user['id'],
             ]);
             $importSuccess = "Importação concluída: {$successCount} registros inseridos" . ($errorCount ? ", {$errorCount} ignorados." : '.');
             if ($importType === 'Completo' && $isAdmin) {
@@ -301,9 +404,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_import']) && 
             db()->rollBack();
             $errors[] = 'Erro ao importar: ' . $ex->getMessage();
         }
+        }
 
         @unlink($tempFile);
-        unset($_SESSION['import_temp'], $_SESSION['import_type'], $_SESSION['import_ext']);
+        unset($_SESSION['import_temp'], $_SESSION['import_type'], $_SESSION['import_ext'], $_SESSION['import_file_name']);
     }
 }
 
@@ -362,7 +466,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     </select>
                 </label>
                 <label class="grid gap-1 text-sm font-semibold">Arquivo XLSX ou CSV
-                    <input class="min-h-10 rounded-md border border-line px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white" type="file" accept=".xlsx,.xls,.csv" name="import_file" required>
+                    <input class="min-h-10 rounded-md border border-line px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white" type="file" accept=".xlsx,.csv" name="import_file" required>
                 </label>
                 <button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white hover:opacity-95" type="submit">Enviar e validar</button>
             </form>

@@ -7,6 +7,10 @@
 function read_xlsx(string $filePath): array
 {
     $sheets = [];
+    if (!class_exists('ZipArchive')) {
+        return [];
+    }
+
     $zip = new ZipArchive();
     if ($zip->open($filePath) !== true) {
         return [];
@@ -30,19 +34,37 @@ function read_xlsx(string $filePath): array
         }
     }
 
-    // Read workbook to get sheet names
+    // Read workbook to get sheet names and their actual worksheet targets.
     $wbXml = $zip->getFromName('xl/workbook.xml');
     if (!$wbXml) { $zip->close(); return []; }
     $wb = new SimpleXMLElement($wbXml);
-    $sheetNames = [];
+
+    $relationships = [];
+    $relsXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
+    if ($relsXml) {
+        $rels = new SimpleXMLElement($relsXml);
+        foreach ($rels->Relationship as $rel) {
+            $relationships[(string) $rel['Id']] = (string) $rel['Target'];
+        }
+    }
+
+    $sheetFiles = [];
+    $index = 0;
     foreach ($wb->sheets->sheet as $sheet) {
-        $sheetNames[] = (string) $sheet['name'];
+        $index++;
+        $relAttrs = $sheet->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+        $relationshipId = (string) ($relAttrs['id'] ?? '');
+        $target = $relationships[$relationshipId] ?? ('worksheets/sheet' . $index . '.xml');
+        $sheetFile = str_starts_with($target, 'xl/') ? $target : 'xl/' . ltrim($target, '/');
+        $sheetFiles[] = [
+            'name' => (string) $sheet['name'],
+            'file' => $sheetFile,
+        ];
     }
 
     // Read each sheet
-    foreach ($sheetNames as $index => $sheetName) {
-        $sheetFile = 'xl/worksheets/sheet' . ($index + 1) . '.xml';
-        $sheetXml = $zip->getFromName($sheetFile);
+    foreach ($sheetFiles as $sheetInfo) {
+        $sheetXml = $zip->getFromName($sheetInfo['file']);
         if (!$sheetXml) continue;
 
         $xml = new SimpleXMLElement($sheetXml);
@@ -67,7 +89,7 @@ function read_xlsx(string $filePath): array
             $rows[] = $filled;
         }
 
-        $sheets[$sheetName] = $rows;
+        $sheets[$sheetInfo['name']] = $rows;
     }
 
     $zip->close();
@@ -111,9 +133,19 @@ function xlsx_cell_value(SimpleXMLElement $cell, array $sharedStrings)
 function xlsx_date_value($value): ?string
 {
     if (!$value || $value === '') return null;
+    $value = trim((string) $value);
     // Already a date string (YYYY-MM-DD)
-    if (preg_match('/^\d{4}-\d{2}-\d{2}/', (string) $value)) {
-        return substr((string) $value, 0, 10);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value)) {
+        return substr($value, 0, 10);
+    }
+    if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/', $value, $m)) {
+        $year = (int) $m[3];
+        if ($year < 100) {
+            $year += 2000;
+        }
+        if (checkdate((int) $m[2], (int) $m[1], $year)) {
+            return sprintf('%04d-%02d-%02d', $year, (int) $m[2], (int) $m[1]);
+        }
     }
     // Excel serial date number
     if (is_numeric($value)) {
@@ -124,7 +156,7 @@ function xlsx_date_value($value): ?string
         }
     }
     // Try parsing
-    $t = strtotime((string) $value);
+    $t = strtotime($value);
     return $t ? date('Y-m-d', $t) : null;
 }
 
