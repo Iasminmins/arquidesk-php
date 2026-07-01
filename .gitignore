@@ -1,1 +1,5 @@
 app/config/config.local.php
+
+# Uploads de usuários (contratos, arquivos de projetos) - não versionar
+uploads/contracts/
+public/uploads/
