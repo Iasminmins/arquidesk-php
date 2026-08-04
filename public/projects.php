@@ -357,7 +357,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                             <button class="grid h-9 w-9 place-items-center rounded-md border border-red-200 text-red-600 hover:bg-red-50" type="submit" title="Excluir"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                                         </form>
                                     <?php endif; ?>
-                                    <?php if ($stage === 'NEGOCIACAO' && $project['current_stage'] === 'NEGOCIACAO' && ($project['negotiation_status'] ?? '') !== 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
+                                    <?php if ($project['current_stage'] === $stage && project_can_abandon($stage) && ($project['negotiation_status'] ?? '') !== 'Desistida' && $user['role'] !== 'CONFERENTE'): ?>
                                         <form method="post" action="/project-desistir.php" class="js-action-form" data-action="desistir" data-id="<?= (int) $project['id'] ?>">
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="id" value="<?= (int) $project['id'] ?>">
@@ -1009,7 +1009,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             success: 'Marcado como desistida.',
             removeRow: true,
             undo: function (res, id) {
-                return postForm('/project-negotiation-undo.php', { id, target_status: res.prev_status || '' });
+                return postForm('/project-negotiation-undo.php', { id, target_status: res.prev_status || '', target_stage: res.prev_stage || 'NEGOCIACAO' });
             },
         },
         futuro: {
@@ -1017,7 +1017,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             success: 'Enviado para Clientes Futuros.',
             removeRow: true,
             undo: function (res, id) {
-                return postForm('/project-to-future-undo.php', { id, future_id: res.future_id || 0, prev_status: res.prev_status || '' });
+                return postForm('/project-to-future-undo.php', { id, future_id: res.future_id || 0, prev_status: res.prev_status || '', prev_stage: res.prev_stage || 'NEGOCIACAO' });
             },
         },
         reativar: {

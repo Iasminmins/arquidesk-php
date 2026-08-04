@@ -9,7 +9,12 @@ if ($user['role'] === 'CONFERENTE') {
 $id = (int) ($_POST['id'] ?? 0);
 $futureId = (int) ($_POST['future_id'] ?? 0);
 $prevStatus = $_POST['prev_status'] ?? '';
+$prevStage = $_POST['prev_stage'] ?? 'NEGOCIACAO';
 $companyId = (int) $user['company_id'];
+
+if (!in_array($prevStage, ['PROJETO', 'NEGOCIACAO'], true)) {
+    json_response(['ok' => false, 'error' => 'Etapa inválida.'], 422);
+}
 
 $stmt = db()->prepare('select id from client_projects where id = ? and company_id = ? limit 1');
 $stmt->execute([$id, $companyId]);
@@ -26,8 +31,8 @@ if ($futureId) {
 }
 
 // Restaura status anterior do projeto
-$pdo->prepare('update client_projects set negotiation_status = ? where id = ? and company_id = ?')
-    ->execute([$prevStatus !== '' ? $prevStatus : null, $id, $companyId]);
+$pdo->prepare('update client_projects set current_stage = ?, negotiation_status = ? where id = ? and company_id = ?')
+    ->execute([$prevStage, $prevStatus !== '' ? $prevStatus : null, $id, $companyId]);
 $pdo->prepare('insert into flow_history (company_id, client_project_id, from_stage, to_stage, action, user_id) values (?,?,?,?,?,?)')->execute([
     $companyId, $id, 'NEGOCIACAO', 'NEGOCIACAO', 'Envio para Clientes Futuros desfeito', (int) $user['id'],
 ]);

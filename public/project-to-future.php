@@ -20,6 +20,11 @@ if (!$project) {
 }
 
 $prevStatus = $project['negotiation_status'];
+$prevStage = $project['current_stage'];
+if (!project_can_abandon($prevStage)) {
+    if ($ajax) json_response(['ok' => false, 'error' => 'Esta etapa não permite enviar para Futuro.'], 422);
+    redirect('/projects.php?stage=' . urlencode($prevStage));
+}
 $pdo = db();
 $pdo->beginTransaction();
 
@@ -39,14 +44,14 @@ $pdo->prepare('insert into future_clients (company_id, designer_id, name, phone,
 ]);
 $futureId = (int) $pdo->lastInsertId();
 
-$pdo->prepare('update client_projects set negotiation_status = ? where id = ? and company_id = ?')->execute(['Desistida', $id, $companyId]);
+$pdo->prepare("update client_projects set current_stage = 'NEGOCIACAO', negotiation_status = ? where id = ? and company_id = ?")->execute(['Desistida', $id, $companyId]);
 $pdo->prepare('insert into flow_history (company_id, client_project_id, from_stage, to_stage, action, user_id) values (?,?,?,?,?,?)')->execute([
-    $companyId, $id, 'NEGOCIACAO', 'NEGOCIACAO', 'Enviado para Clientes Futuros', (int) $user['id'],
+    $companyId, $id, $prevStage, 'NEGOCIACAO', 'Enviado para Clientes Futuros', (int) $user['id'],
 ]);
 
 $pdo->commit();
 
 if ($ajax) {
-    json_response(['ok' => true, 'id' => $id, 'future_id' => $futureId, 'prev_status' => $prevStatus]);
+    json_response(['ok' => true, 'id' => $id, 'future_id' => $futureId, 'prev_status' => $prevStatus, 'prev_stage' => $prevStage]);
 }
 redirect('/projects.php?stage=NEGOCIACAO&ok=1&msg=' . urlencode('Cliente enviado para Clientes Futuros com próximo contato em 30 dias.'));

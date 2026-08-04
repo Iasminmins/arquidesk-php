@@ -514,6 +514,11 @@ function project_stale_threshold(string $stage): int
     return in_array($stage, ['PROJETO', 'NEGOCIACAO'], true) ? 7 : 5;
 }
 
+function project_can_abandon(string $stage): bool
+{
+    return in_array($stage, ['PROJETO', 'NEGOCIACAO'], true);
+}
+
 function project_is_stale(array $project): bool
 {
     $stage = (string) ($project['current_stage'] ?? '');

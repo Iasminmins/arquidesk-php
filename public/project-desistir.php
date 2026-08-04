@@ -20,13 +20,18 @@ if (!$project) {
 }
 
 $prevStatus = $project['negotiation_status'];
+$prevStage = $project['current_stage'];
+if (!project_can_abandon($prevStage)) {
+    if ($ajax) json_response(['ok' => false, 'error' => 'Esta etapa não permite desistência.'], 422);
+    redirect('/projects.php?stage=' . urlencode($prevStage));
+}
 
-db()->prepare('update client_projects set negotiation_status = ? where id = ? and company_id = ?')->execute(['Desistida', $id, $companyId]);
+db()->prepare("update client_projects set current_stage = 'NEGOCIACAO', negotiation_status = ? where id = ? and company_id = ?")->execute(['Desistida', $id, $companyId]);
 db()->prepare('insert into flow_history (company_id, client_project_id, from_stage, to_stage, action, user_id) values (?,?,?,?,?,?)')->execute([
-    $companyId, $id, 'NEGOCIACAO', 'NEGOCIACAO', 'Marcado como desistida', (int) $user['id'],
+    $companyId, $id, $prevStage, 'NEGOCIACAO', 'Marcado como desistida', (int) $user['id'],
 ]);
 
 if ($ajax) {
-    json_response(['ok' => true, 'id' => $id, 'prev_status' => $prevStatus]);
+    json_response(['ok' => true, 'id' => $id, 'prev_status' => $prevStatus, 'prev_stage' => $prevStage]);
 }
 redirect('/projects.php?stage=NEGOCIACAO&ok=1&msg=' . urlencode('Projeto marcado como desistida.'));
