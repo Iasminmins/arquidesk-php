@@ -7,6 +7,7 @@ require_active_subscription($user);
 
 $companyId = (int) $user['company_id'];
 $id        = (int) ($_GET['id'] ?? 0);
+$fileSupervisorId = intern_supervisor_filter_id($user);
 
 try {
     db()->exec("create table if not exists project_files (
@@ -30,6 +31,9 @@ if ($id <= 0) {
     if ($user['role'] === 'PROJETISTA') {
         $where .= ' and p.designer_id = ?';
         $params[] = (int) $user['id'];
+    } elseif ($fileSupervisorId !== null) {
+        $where .= ' and p.designer_id = ?';
+        $params[] = $fileSupervisorId;
     }
 
     $projectsStmt = db()->prepare(
@@ -49,13 +53,15 @@ if ($id <= 0) {
         "select pf.*, p.client_name, p.project_name
          from project_files pf
          join client_projects p on p.id = pf.client_project_id and p.company_id = pf.company_id
-         where pf.company_id = ?" . ($user['role'] === 'PROJETISTA' ? ' and p.designer_id = ?' : '') . "
+         where pf.company_id = ?" . ($user['role'] === 'PROJETISTA' || $fileSupervisorId !== null ? ' and p.designer_id = ?' : '') . "
          order by pf.created_at desc
          limit 8"
     );
     $recentParams = [$companyId];
     if ($user['role'] === 'PROJETISTA') {
         $recentParams[] = (int) $user['id'];
+    } elseif ($fileSupervisorId !== null) {
+        $recentParams[] = $fileSupervisorId;
     }
     $recentStmt->execute($recentParams);
     $recentFiles = $recentStmt->fetchAll();
@@ -130,7 +136,7 @@ if (!$project) {
     redirect('/projects.php');
 }
 
-if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+if (($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) || ($fileSupervisorId !== null && (int) $project['designer_id'] !== $fileSupervisorId)) {
     redirect('/projects.php');
 }
 
@@ -155,8 +161,8 @@ $categoryLabels = [
     'OUTRO'    => 'Outro',
 ];
 
-$canEdit   = $user['role'] !== 'CONFERENTE';
-$canDelete = in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true);
+$canEdit = $user['role'] !== 'CONFERENTE' && ($user['role'] !== 'ESTAGIARIO' || intern_has_permission(intern_permissions_for_user((int) $user['id']), 'project_files', 'EDIT'));
+$canDelete = in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true) || ($user['role'] === 'ESTAGIARIO' && intern_has_permission(intern_permissions_for_user((int) $user['id']), 'project_files', 'DELETE'));
 
 $pageTitle = 'Arquivos — ' . $project['project_name'];
 require __DIR__ . '/../app/includes/header.php';

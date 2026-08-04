@@ -3,19 +3,24 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
-if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA', 'CONFERENTE'], true)) { redirect('/'); }
-$canWriteFinance = in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true);
+if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA', 'CONFERENTE', 'ESTAGIARIO'], true)) { redirect('/'); }
+$canWriteFinance = in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)
+    || ($user['role'] === 'ESTAGIARIO' && intern_has_permission(intern_permissions_for_user((int) $user['id']), 'finance', 'EDIT'));
+$canDeleteFinance = $user['role'] !== 'ESTAGIARIO'
+    || intern_has_permission(intern_permissions_for_user((int) $user['id']), 'finance', 'DELETE');
 
 $companyId = (int) $user['company_id'];
 $now = new DateTimeImmutable();
 $month = max(1, min(12, (int) ($_GET['month'] ?? $now->format('n'))));
 $year = (int) ($_GET['year'] ?? $now->format('Y'));
 $designerFilter = $_GET['designer_id'] ?? '';
+$financeSupervisorId = intern_supervisor_filter_id($user);
 if ($user['role'] === 'PROJETISTA') { $designerFilter = (string) $user['id']; }
+elseif ($financeSupervisorId !== null) { $designerFilter = (string) $financeSupervisorId; }
 [$start, $end] = month_range($year, $month);
 
 // POST: save sale
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance && isset($_POST['delete_sale'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canDeleteFinance && isset($_POST['delete_sale'])) {
     db()->prepare('delete from financial_sales where id=? and company_id=?')->execute([(int) $_POST['delete_sale'], $companyId]);
     redirect('/finance.php?month=' . $month . '&year=' . $year . '&designer_id=' . urlencode($designerFilter) . '&ok=1');
 }
@@ -24,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWriteFinance && isset($_POST['s
     $saleId = (int) ($_POST['id'] ?? 0);
     $designerId = (int) ($_POST['designer_id'] ?? 0);
     if ($user['role'] === 'PROJETISTA') { $designerId = (int) $user['id']; }
+    elseif ($financeSupervisorId !== null) { $designerId = $financeSupervisorId; }
     $payload = [
         null_if_empty($_POST['client_project_id'] ?? ''), $designerId ?: null,
         trim($_POST['client_name'] ?? ''), trim($_POST['project_name'] ?? ''),
@@ -56,8 +62,8 @@ $showModal = $edit || isset($_GET['new']);
 $designersStmt = db()->prepare("select id, name from users where company_id = ? and role in ('ADMIN_EMPRESA','PROJETISTA') and active = 1 order by name");
 $designersStmt->execute([$companyId]); $designers = $designersStmt->fetchAll();
 
-$projectsStmt = db()->prepare('select id, client_name, project_name, designer_id, closed_value from client_projects where company_id = ? order by updated_at desc');
-$projectsStmt->execute([$companyId]); $projects = $projectsStmt->fetchAll();
+$projectsStmt = db()->prepare('select id, client_name, project_name, designer_id, closed_value from client_projects where company_id = ?' . ($financeSupervisorId !== null ? ' and designer_id = ?' : '') . ' order by updated_at desc');
+$projectsStmt->execute($financeSupervisorId !== null ? [$companyId, $financeSupervisorId] : [$companyId]); $projects = $projectsStmt->fetchAll();
 
 // Sales (all, not filtered by month - table shows all)
 $sWhere = ['s.company_id = ?']; $sParams = [$companyId];
@@ -156,11 +162,11 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3 text-right">
                                 <div class="flex justify-end gap-2">
                                     <a class="rounded-md border border-line px-3 py-2 text-xs font-semibold hover:bg-fog" href="/finance.php?month=<?= $month ?>&year=<?= $year ?>&designer_id=<?= e($designerFilter) ?>&edit=<?= (int) $sale['id'] ?>">Editar</a>
-                                    <form method="post" onsubmit="return confirm('Excluir?')">
+                                    <?php if ($canDeleteFinance): ?><form method="post" onsubmit="return confirm('Excluir?')">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="delete_sale" value="<?= (int) $sale['id'] ?>">
                                         <button class="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600" type="submit">Excluir</button>
-                                    </form>
+                                    </form><?php endif; ?>
                                 </div>
                             </td>
                             <?php endif; ?>

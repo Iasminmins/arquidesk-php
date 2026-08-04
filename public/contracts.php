@@ -5,12 +5,14 @@ require_once __DIR__ . '/../app/includes/contracts.php';
 
 $user = require_auth();
 require_active_subscription($user);
-if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)) {
+if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA', 'ESTAGIARIO'], true)) {
     redirect('/');
 }
 
 $companyId = (int) $user['company_id'];
-$isDesigner = $user['role'] === 'PROJETISTA';
+$contractSupervisorId = intern_supervisor_filter_id($user);
+$isDesigner = $user['role'] === 'PROJETISTA' || $contractSupervisorId !== null;
+$designerAccessId = $user['role'] === 'PROJETISTA' ? (int) $user['id'] : $contractSupervisorId;
 contracts_bootstrap($companyId);
 
 $companyStmt = db()->prepare('select * from companies where id = ? limit 1');
@@ -125,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $projectParams = [$projectId, $companyId];
         if ($isDesigner) {
             $projectSql .= ' and p.designer_id = ?';
-            $projectParams[] = (int) $user['id'];
+            $projectParams[] = $designerAccessId;
         }
         $projectSql .= ' limit 1';
         $projectStmt = db()->prepare($projectSql);
@@ -171,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $params = ['CANCELED', $contractId, $companyId];
         if ($isDesigner) {
             $sql .= ' and p.designer_id = ?';
-            $params[] = (int) $user['id'];
+            $params[] = $designerAccessId;
         }
         db()->prepare($sql)->execute($params);
         redirect('/contracts.php?ok=1');
@@ -186,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $params = [$contractId, $companyId];
         if ($isDesigner) {
             $sql .= ' and p.designer_id = ?';
-            $params[] = (int) $user['id'];
+            $params[] = $designerAccessId;
         }
         $sql .= ' limit 1';
         $stmt = db()->prepare($sql);
@@ -217,7 +219,7 @@ $projectSql = "select p.id, p.client_name, p.project_name, p.current_stage, u.na
 $projectParams = [$companyId];
 if ($isDesigner) {
     $projectSql .= ' and p.designer_id = ?';
-    $projectParams[] = (int) $user['id'];
+    $projectParams[] = $designerAccessId;
 }
 $projectSql .= ' order by p.updated_at desc, p.created_at desc';
 $projectsStmt = db()->prepare($projectSql);
@@ -236,7 +238,7 @@ $contractsSql = "select pc.*, p.client_name, p.project_name, p.current_stage, u.
 $contractsParams = [$companyId];
 if ($isDesigner) {
     $contractsSql .= ' and p.designer_id = ?';
-    $contractsParams[] = (int) $user['id'];
+    $contractsParams[] = $designerAccessId;
 }
 if ($search !== '') {
     $contractsSql .= ' and (pc.title like ? or p.client_name like ? or p.project_name like ?)';

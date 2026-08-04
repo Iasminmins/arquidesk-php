@@ -120,9 +120,13 @@ $projectsSql = "select p.id, p.client_name, p.project_name, p.current_stage, u.n
     left join users u on u.id = p.designer_id
     where p.company_id = ?";
 $projectsParams = [$companyId];
+$myDaySupervisorId = intern_supervisor_filter_id($user);
 if ($user['role'] === 'PROJETISTA') {
     $projectsSql .= ' and p.designer_id = ?';
     $projectsParams[] = $userId;
+} elseif ($myDaySupervisorId !== null) {
+    $projectsSql .= ' and p.designer_id = ?';
+    $projectsParams[] = $myDaySupervisorId;
 }
 $projectsSql .= ' order by p.updated_at desc, p.created_at desc limit 300';
 $projectsStmt = db()->prepare($projectsSql);

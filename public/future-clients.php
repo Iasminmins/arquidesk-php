@@ -4,12 +4,15 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
-if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)) {
+if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA', 'ESTAGIARIO'], true)) {
     redirect('/');
 }
 
 $companyId = (int) $user['company_id'];
 $isDesigner = $user['role'] === 'PROJETISTA';
+$restrictedDesignerId = intern_supervisor_filter_id($user);
+$canEdit = $user['role'] !== 'ESTAGIARIO' || intern_has_permission(intern_permissions_for_user((int) $user['id']), 'future_clients', 'EDIT');
+$canDelete = $user['role'] !== 'ESTAGIARIO' || intern_has_permission(intern_permissions_for_user((int) $user['id']), 'future_clients', 'DELETE');
 
 $statusLabels = [
     'NOVO' => 'Novo',
@@ -25,7 +28,7 @@ $sourceOptions = ['Indicação', 'Instagram', 'Facebook', 'Google', 'Site', 'Eve
 // Save (create or update)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save'])) {
     $id = (int) ($_POST['id'] ?? 0);
-    $designerId = $isDesigner ? (int) $user['id'] : ((int) ($_POST['designer_id'] ?? 0) ?: null);
+    $designerId = $isDesigner ? (int) $user['id'] : ($restrictedDesignerId ?? ((int) ($_POST['designer_id'] ?? 0) ?: null));
     $payload = [
         $companyId, $designerId,
         trim($_POST['name'] ?? ''),
@@ -107,6 +110,9 @@ $params = [$companyId];
 if ($isDesigner) {
     $sql .= " and fc.designer_id = ?";
     $params[] = (int) $user['id'];
+} elseif ($restrictedDesignerId !== null) {
+    $sql .= " and fc.designer_id = ?";
+    $params[] = $restrictedDesignerId;
 }
 if ($view === 'active') {
     $sql .= " and fc.status not in ('CONVERTIDO','PERDIDO')";
@@ -126,8 +132,9 @@ $stmt->execute($params);
 $clients = $stmt->fetchAll();
 
 // Count by view
-$countStmt = db()->prepare("select status, count(*) as total from future_clients where company_id = ?" . ($isDesigner ? " and designer_id = ?" : "") . " group by status");
-$countParams = $isDesigner ? [$companyId, (int) $user['id']] : [$companyId];
+$filterDesignerId = $isDesigner ? (int) $user['id'] : $restrictedDesignerId;
+$countStmt = db()->prepare("select status, count(*) as total from future_clients where company_id = ?" . ($filterDesignerId !== null ? " and designer_id = ?" : "") . " group by status");
+$countParams = $filterDesignerId !== null ? [$companyId, $filterDesignerId] : [$companyId];
 $countStmt->execute($countParams);
 $statusCounts = [];
 foreach ($countStmt->fetchAll() as $row) { $statusCounts[$row['status']] = (int) $row['total']; }
@@ -138,8 +145,10 @@ $lostCount = $statusCounts['PERDIDO'] ?? 0;
 // Edit
 $edit = null;
 if (!empty($_GET['edit'])) {
-    $editStmt = db()->prepare('select * from future_clients where id = ? and company_id = ?');
-    $editStmt->execute([(int) $_GET['edit'], $companyId]);
+    $editStmt = db()->prepare('select * from future_clients where id = ? and company_id = ?' . ($restrictedDesignerId !== null ? ' and designer_id = ?' : ''));
+    $editParams = [(int) $_GET['edit'], $companyId];
+    if ($restrictedDesignerId !== null) $editParams[] = $restrictedDesignerId;
+    $editStmt->execute($editParams);
     $edit = $editStmt->fetch();
 }
 
@@ -162,7 +171,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <input class="min-h-10 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-ink md:max-w-sm" name="q" value="<?= e($search) ?>" placeholder="Buscar por nome, telefone ou interesse">
             <button class="rounded-md border border-line bg-white px-4 text-sm font-semibold hover:bg-fog" type="submit">Filtrar</button>
         </form>
-        <a class="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white hover:opacity-95" href="/future-clients.php?edit=new">+ Novo cliente futuro</a>
+        <?php if ($canEdit): ?><a class="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white hover:opacity-95" href="/future-clients.php?edit=new">+ Novo cliente futuro</a><?php endif; ?>
     </div>
 
     <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit sm:grid-cols-3">
@@ -171,7 +180,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
         <a class="rounded-md px-4 py-2 text-center <?= $view === 'lost' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/future-clients.php?view=lost">Perdidos <span class="ml-1 opacity-70"><?= $lostCount ?></span></a>
     </div>
 
-    <?php if ($edit !== null || isset($_GET['edit'])): ?>
+    <?php if ($canEdit && ($edit !== null || isset($_GET['edit']))): ?>
     <?php $isNew = ($_GET['edit'] ?? '') === 'new'; ?>
     <section class="rounded-lg border border-line bg-white p-5">
         <h3 class="text-lg font-bold"><?= $isNew ? 'Novo cliente futuro' : 'Editar cliente futuro' ?></h3>
@@ -279,7 +288,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3"><?= $fc['estimated_value'] ? money_br($fc['estimated_value']) : '-' ?></td>
                             <td class="p-3"><?= e($fc['source'] ?: '-') ?></td>
                             <td class="p-3">
-                                <?php if ($fc['status'] !== 'CONVERTIDO'): ?>
+                                <?php if ($canEdit && $fc['status'] !== 'CONVERTIDO'): ?>
                                 <form method="post" class="inline">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="update_status" value="1">
@@ -305,8 +314,8 @@ require __DIR__ . '/../app/includes/sidebar.php';
                             <td class="p-3"><?= e($fc['designer_name'] ?: '-') ?></td>
                             <td class="p-3">
                                 <div class="flex flex-wrap justify-end gap-2">
-                                    <a class="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-fog" href="/future-clients.php?edit=<?= (int) $fc['id'] ?>">Editar</a>
-                                    <?php if ($fc['status'] !== 'CONVERTIDO'): ?>
+                                    <?php if ($canEdit): ?><a class="rounded-md border border-line px-3 py-1.5 text-xs font-semibold hover:bg-fog" href="/future-clients.php?edit=<?= (int) $fc['id'] ?>">Editar</a><?php endif; ?>
+                                    <?php if ($canEdit && $fc['status'] !== 'CONVERTIDO'): ?>
                                         <form method="post" onsubmit="return confirm('Converter <?= e($fc['name']) ?> em projeto?')">
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="convert" value="<?= (int) $fc['id'] ?>">
@@ -315,11 +324,11 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                     <?php else: ?>
                                         <a class="rounded-md border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700" href="/projects.php?stage=PROJETO">Ver projeto</a>
                                     <?php endif; ?>
-                                    <form method="post" onsubmit="return confirm('Excluir <?= e($fc['name']) ?>?')">
+                                    <?php if ($canDelete): ?><form method="post" onsubmit="return confirm('Excluir <?= e($fc['name']) ?>?')">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="delete" value="<?= (int) $fc['id'] ?>">
                                         <button class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600" type="submit">Excluir</button>
-                                    </form>
+                                    </form><?php endif; ?>
                                 </div>
                             </td>
                         </tr>

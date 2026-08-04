@@ -65,6 +65,10 @@ $data = [
     'assistance_date' => posted_date('assistance_date', $existing['assistance_date'] ?? null),
     'notes' => posted_trim('notes', $existing['notes'] ?? ''),
 ];
+$restrictedDesignerId = intern_supervisor_filter_id($user);
+if ($restrictedDesignerId !== null) {
+    $data['designer_id'] = $restrictedDesignerId;
+}
 
 if ($id) {
     $stmt = db()->prepare(

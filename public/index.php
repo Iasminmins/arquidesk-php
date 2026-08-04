@@ -235,6 +235,7 @@ $pageTitle = 'Dashboard';
 require_active_subscription($user);
 
 $companyId = (int) $user['company_id'];
+$dashboardDesignerId = $user['role'] === 'PROJETISTA' ? (int) $user['id'] : intern_supervisor_filter_id($user);
 $period = $_GET['period'] ?? 'month';
 $customStart = $_GET['start'] ?? date('Y-m-d');
 $customEnd = $_GET['end'] ?? date('Y-m-d');
@@ -262,9 +263,9 @@ if ($period === 'today') {
 
 $projectSql = "select current_stage, count(*) as total from client_projects where company_id = ? and date(coalesce(updated_at, created_at)) between ? and ?";
 $projectParams = [$companyId, $periodStart, $periodEnd];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $projectSql .= " and designer_id = ?";
-    $projectParams[] = (int) $user['id'];
+    $projectParams[] = $dashboardDesignerId;
 }
 $projectSql .= " group by current_stage";
 $stageStmt = db()->prepare($projectSql);
@@ -277,9 +278,9 @@ $totalProjects = array_sum($stageCounts);
 
 $salesSql = "select coalesce(sum(sold_value), 0) from financial_sales where company_id = ? and sale_date between ? and ?";
 $salesParams = [$companyId, $periodStart, $periodEnd];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $salesSql .= " and designer_id = ?";
-    $salesParams[] = (int) $user['id'];
+    $salesParams[] = $dashboardDesignerId;
 }
 $salesStmt = db()->prepare($salesSql);
 $salesStmt->execute($salesParams);
@@ -287,9 +288,9 @@ $totalSold = (float) $salesStmt->fetchColumn();
 
 $paymentsSql = "select coalesce(sum(fp.amount), 0) from financial_payments fp join financial_sales fs on fs.id = fp.financial_sale_id where fp.company_id = ? and fp.payment_date between ? and ?";
 $paymentsParams = [$companyId, $periodStart, $periodEnd];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $paymentsSql .= " and fs.designer_id = ?";
-    $paymentsParams[] = (int) $user['id'];
+    $paymentsParams[] = $dashboardDesignerId;
 }
 $paymentsStmt = db()->prepare($paymentsSql);
 $paymentsStmt->execute($paymentsParams);
@@ -298,9 +299,9 @@ $commissionRate = commission_rate($totalReceived);
 
 $recentSql = "select p.*, u.name as designer_name from client_projects p left join users u on u.id = p.designer_id where p.company_id = ? and date(coalesce(p.updated_at, p.created_at)) between ? and ?";
 $recentParams = [$companyId, $periodStart, $periodEnd];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $recentSql .= " and p.designer_id = ?";
-    $recentParams[] = (int) $user['id'];
+    $recentParams[] = $dashboardDesignerId;
 }
 $recentSql .= " order by p.updated_at desc, p.created_at desc limit 6";
 $recentStmt = db()->prepare($recentSql);
@@ -311,9 +312,9 @@ $recentProjects = $recentStmt->fetchAll();
 
 $prevSalesParams = [$companyId, $prevStart, $prevEnd];
 $prevPaymentsParams = [$companyId, $prevStart, $prevEnd];
-if ($user['role'] === 'PROJETISTA') {
-    $prevSalesParams[] = (int) $user['id'];
-    $prevPaymentsParams[] = (int) $user['id'];
+if ($dashboardDesignerId !== null) {
+    $prevSalesParams[] = $dashboardDesignerId;
+    $prevPaymentsParams[] = $dashboardDesignerId;
 }
 $prevSalesStmt = db()->prepare($salesSql);
 $prevSalesStmt->execute($prevSalesParams);
@@ -331,9 +332,9 @@ $commissionDelta = metric_delta($commissionValue, $prevCommission);
 
 $pipelineSql = 'select current_stage, count(*) as total, coalesce(sum(closed_value), 0) as total_value from client_projects where company_id = ? and (negotiation_status is null or negotiation_status != ?)';
 $pipelineParams = [$companyId, 'Desistida'];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $pipelineSql .= ' and designer_id = ?';
-    $pipelineParams[] = (int) $user['id'];
+    $pipelineParams[] = $dashboardDesignerId;
 }
 $pipelineSql .= ' group by current_stage';
 $pipelineStmt = db()->prepare($pipelineSql);
@@ -353,9 +354,9 @@ $performanceSql = 'select to_stage, count(*) as total
     join client_projects p on p.id = fh.client_project_id and p.company_id = fh.company_id
     where fh.company_id = ? and date(fh.created_at) between ? and ?';
 $performanceParams = [$companyId, $periodStart, $periodEnd];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $performanceSql .= ' and p.designer_id = ?';
-    $performanceParams[] = (int) $user['id'];
+    $performanceParams[] = $dashboardDesignerId;
 }
 $performanceSql .= ' group by to_stage';
 $performanceStmt = db()->prepare($performanceSql);
@@ -374,9 +375,9 @@ $lostDeals = 0;
 try {
     $lostSql = "select count(*) from client_projects where company_id = ? and negotiation_status = 'Desistida' and date(coalesce(updated_at, created_at)) between ? and ?";
     $lostParams = [$companyId, $periodStart, $periodEnd];
-    if ($user['role'] === 'PROJETISTA') {
+    if ($dashboardDesignerId !== null) {
         $lostSql .= ' and designer_id = ?';
-        $lostParams[] = (int) $user['id'];
+        $lostParams[] = $dashboardDesignerId;
     }
     $lostStmt = db()->prepare($lostSql);
     $lostStmt->execute($lostParams);
@@ -395,9 +396,9 @@ $staleSql = "select p.*, u.name as designer_name
        and p.current_stage != 'FINALIZADO'
        and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
 $staleParams = [$companyId];
-if ($user['role'] === 'PROJETISTA') {
+if ($dashboardDesignerId !== null) {
     $staleSql .= ' and p.designer_id = ?';
-    $staleParams[] = (int) $user['id'];
+    $staleParams[] = $dashboardDesignerId;
 }
 $staleSql .= ' order by p.updated_at asc';
 $staleStmt = db()->prepare($staleSql);
@@ -464,9 +465,9 @@ try {
     }
     $scheduleSql = 'select count(*) from client_projects p where p.company_id = ? and (' . implode(' or ', $scheduleConds) . ')';
     $scheduleParams = array_merge([$companyId], array_fill(0, count($scheduleFields), $today));
-    if ($user['role'] === 'PROJETISTA') {
+    if ($dashboardDesignerId !== null) {
         $scheduleSql .= ' and p.designer_id = ?';
-        $scheduleParams[] = (int) $user['id'];
+        $scheduleParams[] = $dashboardDesignerId;
     }
     $scheduleStmt = db()->prepare($scheduleSql);
     $scheduleStmt->execute($scheduleParams);

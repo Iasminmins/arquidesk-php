@@ -61,9 +61,13 @@ $projectsSql = "select p.id, p.client_name, p.project_name, p.current_stage, u.n
     left join users u on u.id = p.designer_id
     where p.company_id = ?";
 $projectsParams = [$companyId];
+$scheduleSupervisorId = intern_supervisor_filter_id($user);
 if ($user['role'] === 'PROJETISTA') {
     $projectsSql .= ' and p.designer_id = ?';
     $projectsParams[] = $userId;
+} elseif ($scheduleSupervisorId !== null) {
+    $projectsSql .= ' and p.designer_id = ?';
+    $projectsParams[] = $scheduleSupervisorId;
 }
 $projectsSql .= ' order by p.updated_at desc, p.created_at desc limit 300';
 $projectsStmt = db()->prepare($projectsSql);
@@ -158,6 +162,9 @@ $projectParams = [$companyId];
 if ($user['role'] === 'PROJETISTA') {
     $projectSql .= ' and p.designer_id = ?';
     $projectParams[] = $userId;
+} elseif ($scheduleSupervisorId !== null) {
+    $projectSql .= ' and p.designer_id = ?';
+    $projectParams[] = $scheduleSupervisorId;
 }
 $projectSql .= ' order by p.updated_at desc, p.created_at desc';
 $stmt = db()->prepare($projectSql);

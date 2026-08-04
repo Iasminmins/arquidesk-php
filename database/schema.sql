@@ -19,11 +19,29 @@ create table if not exists users (
   name varchar(160) not null,
   email varchar(160) not null unique,
   password_hash varchar(255) not null,
-  role enum('SUPER_ADMIN','ADMIN_EMPRESA','PROJETISTA','CONFERENTE') not null default 'ADMIN_EMPRESA',
+  role enum('SUPER_ADMIN','ADMIN_EMPRESA','PROJETISTA','CONFERENTE','ESTAGIARIO') not null default 'ADMIN_EMPRESA',
+  supervisor_user_id int unsigned null,
+  intern_data_scope enum('SUPERVISOR','COMPANY') not null default 'SUPERVISOR',
   active tinyint(1) not null default 1,
   created_at timestamp not null default current_timestamp,
   updated_at timestamp null default null on update current_timestamp,
-  constraint users_company_fk foreign key (company_id) references companies(id) on delete cascade
+  constraint users_company_fk foreign key (company_id) references companies(id) on delete cascade,
+  constraint users_supervisor_fk foreign key (supervisor_user_id) references users(id) on delete set null,
+  index users_supervisor_idx (supervisor_user_id)
+) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
+
+create table if not exists intern_permissions (
+  id int unsigned auto_increment primary key,
+  company_id int unsigned not null,
+  intern_user_id int unsigned not null,
+  tab_key varchar(50) not null,
+  access_level enum('VIEW','EDIT','DELETE') not null,
+  created_at timestamp not null default current_timestamp,
+  updated_at timestamp null default null on update current_timestamp,
+  unique key intern_permission_unique (intern_user_id, tab_key),
+  index intern_permission_company_idx (company_id),
+  constraint intern_permission_company_fk foreign key (company_id) references companies(id) on delete cascade,
+  constraint intern_permission_user_fk foreign key (intern_user_id) references users(id) on delete cascade
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
 
 create table if not exists client_projects (

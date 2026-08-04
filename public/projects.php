@@ -27,10 +27,14 @@ $baseSql = "select p.*, u.name as designer_name
         left join users u on u.id = p.designer_id
         where p.company_id = ?";
 $params = [$companyId];
+$restrictedDesignerId = intern_supervisor_filter_id($user);
 
 if ($user['role'] === 'PROJETISTA') {
     $baseSql .= " and p.designer_id = ?";
     $params[] = (int) $user['id'];
+} elseif ($restrictedDesignerId !== null) {
+    $baseSql .= " and p.designer_id = ?";
+    $params[] = $restrictedDesignerId;
 }
 
 if ($stage === 'FINALIZADO') {
@@ -68,6 +72,9 @@ $countParams = [$companyId];
 if ($user['role'] === 'PROJETISTA') {
     $countSql .= " and designer_id = ?";
     $countParams[] = (int) $user['id'];
+} elseif ($restrictedDesignerId !== null) {
+    $countSql .= " and designer_id = ?";
+    $countParams[] = $restrictedDesignerId;
 }
 $countSql .= " group by current_stage";
 $countStmt = db()->prepare($countSql);
@@ -90,6 +97,7 @@ if ($stage === 'NEGOCIACAO') {
     $dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
     $dParams = [$companyId];
     if ($user['role'] === 'PROJETISTA') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
+    elseif ($restrictedDesignerId !== null) { $dSql .= " and designer_id = ?"; $dParams[] = $restrictedDesignerId; }
     $dStmt = db()->prepare($dSql);
     $dStmt->execute($dParams);
     $desistidasCount = (int) $dStmt->fetchColumn();
@@ -100,7 +108,7 @@ if ($stage === 'NEGOCIACAO') {
 $canCreate = can_create_project($user, $stage);
 $canEdit = can_write_project($user, $stage);
 $canDelete = can_delete_project($user);
-$canDragKanban = $user['role'] !== 'CONFERENTE';
+$canDragKanban = $user['role'] !== 'CONFERENTE' && $canEdit;
 
 $kanbanByStage = array_fill_keys($allowedStages, []);
 if ($layout === 'kanban') {
@@ -112,6 +120,9 @@ if ($layout === 'kanban') {
     if ($user['role'] === 'PROJETISTA') {
         $kanbanSql .= ' and p.designer_id = ?';
         $kanbanParams[] = (int) $user['id'];
+    } elseif ($restrictedDesignerId !== null) {
+        $kanbanSql .= ' and p.designer_id = ?';
+        $kanbanParams[] = $restrictedDesignerId;
     }
     $kanbanSql .= " and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
     if ($search !== '') {

@@ -34,7 +34,7 @@ $stage = $project['current_stage'];
 $field = status_field_for_stage($stage);
 $nextStage = next_stage($stage);
 $canEdit = can_write_project($user, $stage);
-$canMove = $user['role'] !== 'CONFERENTE'
+$canMove = $canEdit && $user['role'] !== 'CONFERENTE'
     && ($project['negotiation_status'] ?? '') !== 'Desistida'
     && $nextStage !== null;
 $moveError = $canMove ? advance_stage_validation($project) : null;

@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/intern-permissions.php';
+
 function e(?string $value): string
 {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
@@ -83,6 +85,7 @@ function role_label(string $role): string
         'ADMIN_EMPRESA' => 'ADMIN EMPRESA',
         'PROJETISTA' => 'PROJETISTA',
         'CONFERENTE' => 'CONFERENTE',
+        'ESTAGIARIO' => 'ESTAGIÁRIO',
         'SUPER_ADMIN' => 'SUPER ADMIN',
     ][$role] ?? $role;
 }
@@ -106,6 +109,7 @@ function role_nav(string $role): array
             '/project-files.php' => 'Arquivos de Projetos',
             '/goals.php?mode=my-goal' => 'Minha Meta',
             '/import-export.php' => 'Minhas Exportações',
+            '/interns.php' => 'Meus Estagiários',
         ],
         'CONFERENTE' => [
             '/' => 'Dashboard',
@@ -120,6 +124,23 @@ function role_nav(string $role): array
             '/finance.php' => 'Financeiro',
             '/goals.php?mode=team-goals' => 'Metas da Equipe',
             '/import-export.php' => 'Exportações Operacionais',
+        ],
+        'ESTAGIARIO' => [
+            '/' => 'Dashboard',
+            '/my-day.php' => 'Meu Dia',
+            '/schedule.php' => 'Agendamentos',
+            '/future-clients.php' => 'Clientes Futuros',
+            '/projects.php?stage=PROJETO' => 'Projeto',
+            '/projects.php?stage=NEGOCIACAO' => 'Negociação',
+            '/projects.php?stage=CONFERENCIA' => 'Conferência',
+            '/projects.php?stage=MONTAGEM' => 'Montagem',
+            '/projects.php?stage=ASSISTENCIA' => 'Assistência',
+            '/projects.php?stage=FINALIZADO' => 'Finalizados',
+            '/finance.php' => 'Financeiro',
+            '/contracts.php' => 'Contratos',
+            '/project-files.php' => 'Arquivos de Projetos',
+            '/goals.php' => 'Metas',
+            '/import-export.php' => 'Importar / Exportar',
         ],
         'SUPER_ADMIN' => [
             '/super-admin.php' => 'Dashboard SaaS',
@@ -144,6 +165,7 @@ function role_nav(string $role): array
             '/goals.php' => 'Metas dos Projetistas',
             '/import-export.php' => 'Importar / Exportar',
             '/employees.php' => 'Funcionários',
+            '/interns.php' => 'Estagiários',
             '/company-settings.php' => 'Configurações da Empresa',
             '/subscription.php' => 'Assinatura / Plano',
         ],
@@ -152,6 +174,9 @@ function role_nav(string $role): array
 
 function can_write_project(array $user, string $stage): bool
 {
+    if ($user['role'] === 'ESTAGIARIO') {
+        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'EDIT');
+    }
     if ($user['role'] === 'CONFERENTE') {
         return in_array($stage, ['CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA'], true);
     }
@@ -161,11 +186,17 @@ function can_write_project(array $user, string $stage): bool
 
 function can_create_project(array $user, string $stage): bool
 {
+    if ($user['role'] === 'ESTAGIARIO') {
+        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'EDIT') && in_array($stage, ['PROJETO', 'ASSISTENCIA'], true);
+    }
     return $user['role'] !== 'CONFERENTE' && in_array($stage, ['PROJETO', 'ASSISTENCIA'], true);
 }
 
 function can_delete_project(array $user): bool
 {
+    if ($user['role'] === 'ESTAGIARIO') {
+        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'DELETE');
+    }
     return in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true);
 }
 

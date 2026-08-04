@@ -1,5 +1,8 @@
 <?php
 $nav = role_nav($user['role']);
+if ($user['role'] === 'ESTAGIARIO') {
+    $nav = intern_filter_nav($nav, intern_permissions_for_user((int) $user['id']));
+}
 $currentPath = strtok($_SERVER['REQUEST_URI'], '?');
 $currentStage = $_GET['stage'] ?? '';
 $currentView = $_GET['view'] ?? '';

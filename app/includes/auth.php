@@ -42,6 +42,7 @@ function require_auth(): array
         redirect('/login.php');
     }
 
+    authorize_intern_request($user);
     return $user;
 }
 

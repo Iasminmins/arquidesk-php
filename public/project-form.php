@@ -8,6 +8,7 @@ $companyId = (int) $user['company_id'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $stage = $_GET['stage'] ?? 'PROJETO';
 $project = null;
+$restrictedDesignerId = intern_supervisor_filter_id($user);
 
 if ($id) {
     $stmt = db()->prepare('select * from client_projects where id = ? and company_id = ? limit 1');
@@ -22,6 +23,9 @@ if ($id) {
 $designersStmt = db()->prepare("select id, name from users where company_id = ? and active = 1 and role in ('ADMIN_EMPRESA','PROJETISTA') order by name");
 $designersStmt->execute([$companyId]);
 $designers = $designersStmt->fetchAll();
+if ($restrictedDesignerId !== null) {
+    $designers = array_values(array_filter($designers, static fn(array $designer): bool => (int) $designer['id'] === $restrictedDesignerId));
+}
 
 $statusOptions = status_options($stage);
 $pageTitle = $project ? 'Editar projeto' : ($stage === 'ASSISTENCIA' ? 'Criar assistência' : 'Criar projeto');
@@ -50,16 +54,16 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <input class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="project_name" required value="<?= e($project['project_name'] ?? '') ?>">
             </label>
             <label class="grid gap-1 text-sm font-semibold">Projetista responsável
-                <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="designer_id" required <?= $user['role'] === 'PROJETISTA' ? 'disabled' : '' ?>>
+                <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="designer_id" required <?= $user['role'] === 'PROJETISTA' || $restrictedDesignerId !== null ? 'disabled' : '' ?>>
                     <option value="">Selecione</option>
                     <?php foreach ($designers as $designer): ?>
-                        <option value="<?= (int) $designer['id'] ?>" <?= (int) ($project['designer_id'] ?? ($user['role'] === 'PROJETISTA' ? $user['id'] : 0)) === (int) $designer['id'] ? 'selected' : '' ?>>
+                        <option value="<?= (int) $designer['id'] ?>" <?= (int) ($project['designer_id'] ?? ($user['role'] === 'PROJETISTA' ? $user['id'] : ($restrictedDesignerId ?? 0))) === (int) $designer['id'] ? 'selected' : '' ?>>
                             <?= e($designer['name']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <?php if ($user['role'] === 'PROJETISTA'): ?>
-                    <input type="hidden" name="designer_id" value="<?= (int) $user['id'] ?>">
+                <?php if ($user['role'] === 'PROJETISTA' || $restrictedDesignerId !== null): ?>
+                    <input type="hidden" name="designer_id" value="<?= (int) ($restrictedDesignerId ?? $user['id']) ?>">
                 <?php endif; ?>
             </label>
         </div>
