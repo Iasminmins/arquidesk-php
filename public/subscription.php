@@ -188,7 +188,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <span class="mt-1 block text-sm text-slate-500"><?= e(date_br($endDate)) ?></span>
         </article>
         <article class="rounded-lg border border-line bg-white p-5">
-            <span class="text-sm text-slate-500">Usuários</span>
+            <span class="text-sm text-slate-500">Contas utilizadas</span>
             <strong class="mt-2 block text-2xl"><?= $userCount ?> / <?= $userLimit ?></strong>
             <span class="mt-1 block text-sm text-slate-500"><?= e($plans[$currentPlan]['users'] ?? '') ?></span>
         </article>

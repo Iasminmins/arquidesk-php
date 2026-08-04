@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $countStmt = $pdo->prepare('select count(*) from users where company_id = ?');
                     $countStmt->execute([$companyId]);
                     if ((int) $countStmt->fetchColumn() >= $userLimit) {
-                        throw new RuntimeException("Seu plano permite até {$userLimit} usuários.");
+                        throw new RuntimeException('Seu plano inclui ' . (plan_config()[$subscription['plan']]['users'] ?? "até {$userLimit} contas") . '.');
                     }
                     $stmt = $pdo->prepare("insert into users (company_id, name, email, password_hash, role, supervisor_user_id, intern_data_scope) values (?, ?, ?, ?, 'ESTAGIARIO', ?, ?)");
                     $stmt->execute([$companyId, $name, $email, password_hash($password, PASSWORD_DEFAULT), $supervisorId, $scope]);

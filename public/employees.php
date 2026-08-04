@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
     $currentCount = (int) $countStmt->fetchColumn();
 
     if ($currentCount >= $userLimit) {
-        $error = "Seu plano atual permite até {$userLimit} usuários. Para adicionar mais pessoas, faça upgrade do plano.";
+        $error = 'Seu plano inclui ' . (plan_config()[$subscription['plan']]['users'] ?? "até {$userLimit} contas") . '. Para adicionar mais pessoas, faça upgrade do plano.';
     } elseif ($name && $email && strlen($password) >= 6) {
         $stmt = db()->prepare('insert into users (company_id, name, email, password_hash, role) values (?, ?, ?, ?, ?)');
         try {
@@ -73,7 +73,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
 ?>
 <section class="grid gap-5">
     <div class="rounded-lg border border-line bg-white p-4 text-sm text-slate-500">
-        Plano atual: <strong class="text-ink"><?= e(plan_label($subscription['plan'])) ?></strong> · Usuários: <strong class="text-ink"><?= count($employees) ?>/<?= $userLimit ?></strong>
+        Plano atual: <strong class="text-ink"><?= e(plan_label($subscription['plan'])) ?></strong> · Contas utilizadas: <strong class="text-ink"><?= count($employees) ?>/<?= $userLimit ?></strong> (incluindo o proprietário)
     </div>
     <?php if (!empty($_GET['ok'])): ?><div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Operacao concluida.</div><?php endif; ?>
     <?php if ($error): ?><div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div><?php endif; ?>
