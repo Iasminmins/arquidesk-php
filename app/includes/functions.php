@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/intern-permissions.php';
+require_once __DIR__ . '/nav-preferences.php';
 
 function e(?string $value): string
 {
@@ -109,6 +110,7 @@ function role_nav(string $role): array
             '/project-files.php' => 'Arquivos de Projetos',
             '/goals.php?mode=my-goal' => 'Minha Meta',
             '/import-export.php' => 'Minhas Exportações',
+            '/menu-settings.php' => 'Configurações do menu',
         ],
         'CONFERENTE' => [
             '/' => 'Dashboard',
@@ -517,6 +519,11 @@ function project_stale_threshold(string $stage): int
 function project_can_abandon(string $stage): bool
 {
     return in_array($stage, ['PROJETO', 'NEGOCIACAO'], true);
+}
+
+function project_is_abandoned(array $project): bool
+{
+    return ($project['negotiation_status'] ?? '') === 'Desistida';
 }
 
 function project_is_stale(array $project): bool

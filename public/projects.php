@@ -41,14 +41,19 @@ $baseSql = "select p.*, u.name as designer_name, iu.name as intern_name
         where p.company_id = ?";
 $params = [$companyId];
 
-if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') {
+if ($user['role'] === 'PROJETISTA' && $view === 'desistidas') {
+    $baseSql .= " and (p.designer_id = ? or p.intern_user_id is not null)";
+    $params[] = (int) $user['id'];
+} elseif ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') {
     $baseSql .= " and p.designer_id = ?";
     $params[] = (int) $user['id'];
 } elseif ($user['role'] === 'ESTAGIARIO') {
     $baseSql .= " and p.intern_user_id = ?";
     $params[] = (int) $user['id'];
 }
-$baseSql .= project_assignment_scope_sql($user['role'], $assignment, 'p');
+if ($view !== 'desistidas') {
+    $baseSql .= project_assignment_scope_sql($user['role'], $assignment, 'p');
+}
 
 if ($stage === 'FINALIZADO') {
     $baseSql .= " and p.current_stage = 'FINALIZADO'";
@@ -105,18 +110,20 @@ foreach ($counts as $itemStage => $count) {
     }
 }
 
-// Count desistidas for NEGOCIACAO
-$desistidasCount = 0;
-if ($stage === 'NEGOCIACAO') {
-    $dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
-    $dParams = [$companyId];
-    if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
-    elseif ($user['role'] === 'ESTAGIARIO') { $dSql .= " and intern_user_id = ?"; $dParams[] = (int) $user['id']; }
-    $dSql .= project_assignment_scope_sql($user['role'], $assignment);
-    $dStmt = db()->prepare($dSql);
-    $dStmt->execute($dParams);
-    $desistidasCount = (int) $dStmt->fetchColumn();
-    // Adjust active count to exclude desistidas
+// Count desistidas available from both Projeto and Negociação tabs.
+$dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
+$dParams = [$companyId];
+if ($user['role'] === 'PROJETISTA') {
+    $dSql .= " and (designer_id = ? or intern_user_id is not null)";
+    $dParams[] = (int) $user['id'];
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $dSql .= " and intern_user_id = ?";
+    $dParams[] = (int) $user['id'];
+}
+$dStmt = db()->prepare($dSql);
+$dStmt->execute($dParams);
+$desistidasCount = (int) $dStmt->fetchColumn();
+if ($stage === 'NEGOCIACAO' && $view !== 'desistidas') {
     $activeCount = max(0, $activeCount - $desistidasCount);
 }
 
@@ -278,7 +285,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?php else: ?>
 
     <?php if ($stage !== 'FINALIZADO'): ?>
-        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit <?= $stage === 'NEGOCIACAO' ? 'sm:grid-cols-4' : 'sm:grid-cols-3' ?>">
+        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit sm:grid-cols-4">
             <a class="rounded-md px-4 py-2 <?= ($view === 'active' || $view === '') && $assignment !== 'intern' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active">
                 <?= e(stage_label($stage)) ?> em andamento <span class="ml-2 opacity-70"><?= $activeCount ?></span>
             </a>
@@ -288,11 +295,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <a class="rounded-md px-4 py-2 <?= $assignment === 'intern' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active&assignment=intern">
                 Projetos Estagiários <span class="ml-2 opacity-70"><?= $internProjectCount ?></span>
             </a>
-            <?php if ($stage === 'NEGOCIACAO'): ?>
             <a class="rounded-md px-4 py-2 <?= $view === 'desistidas' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=NEGOCIACAO&view=desistidas">
-                Desistidas <span class="ml-2 opacity-70"><?= $desistidasCount ?></span>
+                Desistidos <span class="ml-2 opacity-70"><?= $desistidasCount ?></span>
             </a>
-            <?php endif; ?>
         </div>
     <?php endif; ?>
 

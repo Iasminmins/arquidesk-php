@@ -1,5 +1,8 @@
 <?php
 $nav = role_nav($user['role']);
+if ($user['role'] === 'PROJETISTA') {
+    $nav = filter_nav_by_preferences($nav, hidden_nav_keys_for_user((int) $user['id'], (int) $user['company_id']));
+}
 $currentPath = strtok($_SERVER['REQUEST_URI'], '?');
 $currentStage = $_GET['stage'] ?? '';
 $currentView = $_GET['view'] ?? '';
