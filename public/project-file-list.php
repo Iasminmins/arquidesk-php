@@ -13,7 +13,7 @@ $companyId = (int) $user['company_id'];
 $projectId = (int) ($_GET['project_id'] ?? 0);
 
 // Verifica acesso ao projeto
-$stmt = db()->prepare('select id, designer_id from client_projects where id = ? and company_id = ? limit 1');
+$stmt = db()->prepare('select id, designer_id, intern_user_id from client_projects where id = ? and company_id = ? limit 1');
 $stmt->execute([$projectId, $companyId]);
 $project = $stmt->fetch();
 
@@ -21,7 +21,7 @@ if (!$project) {
     json_response(['ok' => false, 'error' => 'Projeto não encontrado.'], 404);
 }
 
-if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+if (!designer_can_manage_project($user, $project)) {
     json_response(['ok' => false, 'error' => 'Sem permissão.'], 403);
 }
 

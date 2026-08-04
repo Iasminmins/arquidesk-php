@@ -15,7 +15,7 @@ if ($user['role'] === 'CONFERENTE') {
 }
 
 $stmt = db()->prepare(
-    'select pf.*, p.designer_id
+    'select pf.*, p.designer_id, p.intern_user_id
      from project_files pf
      join client_projects p on p.id = pf.client_project_id and p.company_id = pf.company_id
      where pf.id = ? and pf.company_id = ?
@@ -29,7 +29,7 @@ if (!$file) {
 }
 
 // PROJETISTA só exclui arquivos dos próprios projetos
-if ($user['role'] === 'PROJETISTA' && (int) $file['designer_id'] !== (int) $user['id']) {
+if (!designer_can_manage_project($user, $file)) {
     json_response(['ok' => false, 'error' => 'Sem permissão.'], 403);
 }
 

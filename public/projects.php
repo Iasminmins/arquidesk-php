@@ -26,10 +26,7 @@ $currentOrder = stage_order($stage);
 
 $internCountSql = 'select count(*) from client_projects where company_id = ? and intern_user_id is not null';
 $internCountParams = [$companyId];
-if ($user['role'] === 'PROJETISTA') {
-    $internCountSql .= ' and designer_id = ?';
-    $internCountParams[] = (int) $user['id'];
-} elseif ($user['role'] === 'ESTAGIARIO') {
+if ($user['role'] === 'ESTAGIARIO') {
     $internCountSql .= ' and intern_user_id = ?';
     $internCountParams[] = (int) $user['id'];
 }
@@ -44,14 +41,14 @@ $baseSql = "select p.*, u.name as designer_name, iu.name as intern_name
         where p.company_id = ?";
 $params = [$companyId];
 
-if ($user['role'] === 'PROJETISTA') {
+if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') {
     $baseSql .= " and p.designer_id = ?";
     $params[] = (int) $user['id'];
 } elseif ($user['role'] === 'ESTAGIARIO') {
     $baseSql .= " and p.intern_user_id = ?";
     $params[] = (int) $user['id'];
 }
-if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $baseSql .= ' and p.intern_user_id is not null';
+$baseSql .= project_assignment_scope_sql($user['role'], $assignment, 'p');
 
 if ($stage === 'FINALIZADO') {
     $baseSql .= " and p.current_stage = 'FINALIZADO'";
@@ -85,14 +82,14 @@ $projects = $stmt->fetchAll();
 
 $countSql = "select current_stage, count(*) total from client_projects where company_id = ?";
 $countParams = [$companyId];
-if ($user['role'] === 'PROJETISTA') {
+if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') {
     $countSql .= " and designer_id = ?";
     $countParams[] = (int) $user['id'];
 } elseif ($user['role'] === 'ESTAGIARIO') {
     $countSql .= " and intern_user_id = ?";
     $countParams[] = (int) $user['id'];
 }
-if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $countSql .= ' and intern_user_id is not null';
+$countSql .= project_assignment_scope_sql($user['role'], $assignment);
 $countSql .= " group by current_stage";
 $countStmt = db()->prepare($countSql);
 $countStmt->execute($countParams);
@@ -113,9 +110,9 @@ $desistidasCount = 0;
 if ($stage === 'NEGOCIACAO') {
     $dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
     $dParams = [$companyId];
-    if ($user['role'] === 'PROJETISTA') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
+    if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
     elseif ($user['role'] === 'ESTAGIARIO') { $dSql .= " and intern_user_id = ?"; $dParams[] = (int) $user['id']; }
-    if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $dSql .= ' and intern_user_id is not null';
+    $dSql .= project_assignment_scope_sql($user['role'], $assignment);
     $dStmt = db()->prepare($dSql);
     $dStmt->execute($dParams);
     $desistidasCount = (int) $dStmt->fetchColumn();
@@ -136,14 +133,14 @@ if ($layout === 'kanban') {
             left join users iu on iu.id = p.intern_user_id
             where p.company_id = ?";
     $kanbanParams = [$companyId];
-    if ($user['role'] === 'PROJETISTA') {
+    if ($user['role'] === 'PROJETISTA' && $assignment !== 'intern') {
         $kanbanSql .= ' and p.designer_id = ?';
         $kanbanParams[] = (int) $user['id'];
     } elseif ($user['role'] === 'ESTAGIARIO') {
         $kanbanSql .= ' and p.intern_user_id = ?';
         $kanbanParams[] = (int) $user['id'];
     }
-    if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $kanbanSql .= ' and p.intern_user_id is not null';
+    $kanbanSql .= project_assignment_scope_sql($user['role'], $assignment, 'p');
     $kanbanSql .= " and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
     if ($search !== '') {
         $kanbanSql .= ' and (p.client_name like ? or p.project_name like ? or u.name like ?)';

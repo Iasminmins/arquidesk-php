@@ -19,7 +19,7 @@ if ($id) {
     if (!$project) {
         redirect('/projects.php');
     }
-    if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+    if (!designer_can_manage_project($user, $project)) {
         http_response_code(403);
         exit('Sem permissão para editar este projeto.');
     }
@@ -27,7 +27,8 @@ if ($id) {
     $forIntern = !empty($project['intern_user_id']);
 }
 
-$designersStmt = db()->prepare("select id, name from users where company_id = ? and active = 1 and role in ('ADMIN_EMPRESA','PROJETISTA') order by name");
+$designerRoles = $user['role'] === 'ESTAGIARIO' ? "'PROJETISTA'" : "'ADMIN_EMPRESA','PROJETISTA'";
+$designersStmt = db()->prepare("select id, name from users where company_id = ? and active = 1 and role in ({$designerRoles}) order by name");
 $designersStmt->execute([$companyId]);
 $designers = $designersStmt->fetchAll();
 if ($restrictedDesignerId !== null) {
@@ -36,10 +37,7 @@ if ($restrictedDesignerId !== null) {
 
 $internSql = "select id, name from users where company_id = ? and role = 'ESTAGIARIO' and active = 1";
 $internParams = [$companyId];
-if ($user['role'] === 'PROJETISTA') {
-    $internSql .= ' and supervisor_user_id = ?';
-    $internParams[] = (int) $user['id'];
-} elseif ($user['role'] === 'ESTAGIARIO') {
+if ($user['role'] === 'ESTAGIARIO') {
     $internSql .= ' and id = ?';
     $internParams[] = (int) $user['id'];
 }

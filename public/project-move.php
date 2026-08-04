@@ -28,7 +28,7 @@ if (!$project) {
     }
     redirect('/');
 }
-if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+if (!designer_can_manage_project($user, $project)) {
     if ($ajax) json_response(['ok' => false, 'error' => 'Sem permissão.'], 403);
     redirect('/projects.php');
 }

@@ -16,7 +16,7 @@ if ($id) {
     if (!$existing) {
         redirect('/projects.php');
     }
-    if ($user['role'] === 'PROJETISTA' && (int) $existing['designer_id'] !== (int) $user['id']) {
+    if (!designer_can_manage_project($user, $existing)) {
         http_response_code(403);
         exit('Sem permissão para editar este projeto.');
     }
@@ -76,14 +76,16 @@ if ($restrictedDesignerId !== null) {
     $data['designer_id'] = $restrictedDesignerId;
 }
 if ($user['role'] === 'ESTAGIARIO') {
-    $data['intern_user_id'] = (int) ($existing['intern_user_id'] ?? 0) ?: null;
+    $data['intern_user_id'] = $id ? ((int) ($existing['intern_user_id'] ?? 0) ?: (int) $user['id']) : (int) $user['id'];
+    $designerStmt = db()->prepare("select count(*) from users where id = ? and company_id = ? and role = 'PROJETISTA' and active = 1");
+    $designerStmt->execute([(int) $data['designer_id'], $companyId]);
+    if (!(int) $designerStmt->fetchColumn()) {
+        http_response_code(422);
+        exit('Selecione um projetista responsável válido.');
+    }
 } elseif ($data['intern_user_id']) {
     $internSql = "select count(*) from users where id = ? and company_id = ? and role = 'ESTAGIARIO' and active = 1";
     $internParams = [$data['intern_user_id'], $companyId];
-    if ($user['role'] === 'PROJETISTA') {
-        $internSql .= ' and supervisor_user_id = ?';
-        $internParams[] = (int) $user['id'];
-    }
     $internStmt = db()->prepare($internSql);
     $internStmt->execute($internParams);
     if (!(int) $internStmt->fetchColumn()) {

@@ -175,7 +175,7 @@ function can_write_project(array $user, string $stage): bool
 function can_create_project(array $user, string $stage): bool
 {
     if ($user['role'] === 'ESTAGIARIO') {
-        return false;
+        return $stage === 'PROJETO';
     }
     return $user['role'] !== 'CONFERENTE' && in_array($stage, ['PROJETO', 'ASSISTENCIA'], true);
 }

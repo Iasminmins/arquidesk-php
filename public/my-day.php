@@ -107,8 +107,7 @@ ensure_daily_checklist_schema();
 $employeesSql = "select id, name, role from users where company_id = ? and active = 1";
 $employeesParams = [$companyId];
 if ($isDesigner) {
-    $employeesSql .= " and (id = ? or (role = 'ESTAGIARIO' and supervisor_user_id = ?))";
-    $employeesParams[] = $userId;
+    $employeesSql .= " and (id = ? or role = 'ESTAGIARIO')";
     $employeesParams[] = $userId;
 } elseif (!$isAdmin) {
     $employeesSql .= ' and id = ?';

@@ -87,6 +87,23 @@ function intern_can_move_project(array $user, string $fromStage, string $toStage
     return $fromStage === 'PROJETO' && $toStage === 'NEGOCIACAO';
 }
 
+function designer_can_manage_project(array $user, array $project): bool
+{
+    if (($user['role'] ?? '') !== 'PROJETISTA') {
+        return true;
+    }
+    return !empty($project['intern_user_id']) || (int) ($project['designer_id'] ?? 0) === (int) ($user['id'] ?? 0);
+}
+
+function project_assignment_scope_sql(string $role, string $assignment, string $alias = ''): string
+{
+    $column = $alias !== '' ? rtrim($alias, '.') . '.intern_user_id' : 'intern_user_id';
+    if ($assignment === 'intern' || $role === 'ESTAGIARIO') {
+        return " and {$column} is not null";
+    }
+    return $role === 'PROJETISTA' ? " and {$column} is null" : '';
+}
+
 function ensure_intern_permissions_schema(): void
 {
     static $ensured = false;
@@ -194,10 +211,6 @@ function authorize_intern_request(array $user): void
         exit('Sem permissão para acessar esta área.');
     }
 
-    if (($path === '/project-form.php' || $path === '/project-save.php') && (int) ($_REQUEST['id'] ?? 0) <= 0) {
-        http_response_code(403);
-        exit('Estagiários não podem criar projetos.');
-    }
     $blockedProjectActions = ['/project-delete.php', '/project-desistir.php', '/project-reativar.php', '/project-to-future.php', '/project-to-future-undo.php', '/project-move-undo.php', '/project-negotiation-undo.php'];
     if (in_array($path, $blockedProjectActions, true)) {
         http_response_code(403);
@@ -217,8 +230,5 @@ function authorize_intern_request(array $user): void
 
 function intern_supervisor_filter_id(array $user): ?int
 {
-    if (($user['role'] ?? '') !== 'ESTAGIARIO' || ($user['intern_data_scope'] ?? 'SUPERVISOR') === 'COMPANY') {
-        return null;
-    }
-    return (int) ($user['supervisor_user_id'] ?? 0) ?: -1;
+    return null;
 }

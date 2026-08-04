@@ -29,7 +29,7 @@ if ($id <= 0) {
     $params = [$companyId];
     $where = 'where p.company_id = ?';
     if ($user['role'] === 'PROJETISTA') {
-        $where .= ' and p.designer_id = ?';
+        $where .= ' and (p.designer_id = ? or p.intern_user_id is not null)';
         $params[] = (int) $user['id'];
     } elseif ($fileSupervisorId !== null) {
         $where .= ' and p.designer_id = ?';
@@ -53,7 +53,7 @@ if ($id <= 0) {
         "select pf.*, p.client_name, p.project_name
          from project_files pf
          join client_projects p on p.id = pf.client_project_id and p.company_id = pf.company_id
-         where pf.company_id = ?" . ($user['role'] === 'PROJETISTA' || $fileSupervisorId !== null ? ' and p.designer_id = ?' : '') . "
+         where pf.company_id = ?" . ($user['role'] === 'PROJETISTA' ? ' and (p.designer_id = ? or p.intern_user_id is not null)' : ($fileSupervisorId !== null ? ' and p.designer_id = ?' : '')) . "
          order by pf.created_at desc
          limit 8"
     );
@@ -136,7 +136,7 @@ if (!$project) {
     redirect('/projects.php');
 }
 
-if (($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) || ($fileSupervisorId !== null && (int) $project['designer_id'] !== $fileSupervisorId)) {
+if (!designer_can_manage_project($user, $project) || ($fileSupervisorId !== null && (int) $project['designer_id'] !== $fileSupervisorId)) {
     redirect('/projects.php');
 }
 

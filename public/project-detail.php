@@ -26,7 +26,7 @@ if (!$project) {
     json_response(['ok' => false, 'error' => 'Projeto não encontrado.'], 404);
 }
 
-if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+if (!designer_can_manage_project($user, $project)) {
     json_response(['ok' => false, 'error' => 'Sem permissão.'], 403);
 }
 
