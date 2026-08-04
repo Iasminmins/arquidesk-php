@@ -95,170 +95,6 @@ function ensure_daily_checklist_schema(): void
     }
 }
 
-function insert_auto_checklist_item(int $companyId, int $userId, ?int $projectId, string $date, string $title, string $description, string $priority, string $autoKey): bool
-{
-    if ($userId <= 0 || $title === '') {
-        return false;
-    }
-
-    $stmt = db()->prepare(
-        "insert ignore into daily_checklist_items
-            (company_id, user_id, client_project_id, title, description, checklist_date, priority, status, source, auto_key, created_by_user_id)
-         values (?, ?, ?, ?, ?, ?, ?, 'PENDENTE', 'AUTO', ?, null)"
-    );
-    $stmt->execute([
-        $companyId,
-        $userId,
-        $projectId,
-        $title,
-        $description,
-        $date,
-        in_array($priority, ['BAIXA', 'NORMAL', 'ALTA'], true) ? $priority : 'NORMAL',
-        $autoKey,
-    ]);
-
-    return $stmt->rowCount() > 0;
-}
-
-function generate_daily_auto_items(int $companyId, string $date, array $employees): int
-{
-    $generated = 0;
-    $admins = [];
-    $conferentes = [];
-    foreach ($employees as $employee) {
-        if ($employee['role'] === 'ADMIN_EMPRESA') {
-            $admins[] = (int) $employee['id'];
-        }
-        if ($employee['role'] === 'CONFERENTE') {
-            $conferentes[] = (int) $employee['id'];
-        }
-    }
-    $conferenceTargets = $conferentes ?: $admins;
-
-    $projectEvents = [
-        'presentation_date' => ['Apresentação marcada hoje', 'PROJETISTA', 'ALTA'],
-        'closing_date' => ['Fechamento previsto hoje', 'PROJETISTA', 'ALTA'],
-        'measurement_date' => ['Medição agendada hoje', 'CONFERENTE', 'ALTA'],
-        'sent_to_factory_date' => ['Envio para fábrica hoje', 'CONFERENTE', 'ALTA'],
-        'billing_date' => ['Faturamento previsto hoje', 'CONFERENTE', 'NORMAL'],
-        'assembly_started_date' => ['Início de montagem hoje', 'CONFERENTE', 'NORMAL'],
-        'assembly_finished_date' => 'Finalização de montagem hoje',
-        'assistance_date' => ['Assistência agendada hoje', 'CONFERENTE', 'ALTA'],
-        'order_date' => ['Pedido de assistência hoje', 'CONFERENTE', 'NORMAL'],
-    ];
-
-    $eventsStmt = db()->prepare(
-        "select p.*, u.name as designer_name
-         from client_projects p
-         left join users u on u.id = p.designer_id
-         where p.company_id = ?
-           and (
-                p.presentation_date = ? or p.closing_date = ? or p.measurement_date = ? or
-                p.sent_to_factory_date = ? or p.billing_date = ? or p.assembly_started_date = ? or
-                p.assembly_finished_date = ? or p.assistance_date = ? or p.order_date = ?
-           )
-         limit 120"
-    );
-    $eventsStmt->execute([$companyId, $date, $date, $date, $date, $date, $date, $date, $date, $date]);
-    foreach ($eventsStmt->fetchAll() as $project) {
-        foreach ($projectEvents as $field => $config) {
-            if (empty($project[$field]) || $project[$field] !== $date) {
-                continue;
-            }
-            if (is_string($config)) {
-                $config = [$config, 'CONFERENTE', 'NORMAL'];
-            }
-            [$label, $targetRole, $priority] = $config;
-            $targetUsers = $targetRole === 'PROJETISTA' && !empty($project['designer_id'])
-                ? [(int) $project['designer_id']]
-                : $conferenceTargets;
-            foreach ($targetUsers as $targetUserId) {
-                $title = $label . ': ' . $project['client_name'] . ' - ' . $project['project_name'];
-                $description = 'Criado automaticamente pela agenda do projeto em ' . stage_label($project['current_stage']) . '.';
-                $generated += insert_auto_checklist_item($companyId, $targetUserId, (int) $project['id'], $date, $title, $description, $priority, "project-date:{$project['id']}:{$field}") ? 1 : 0;
-            }
-        }
-    }
-
-    $futureStmt = db()->prepare(
-        "select fc.*
-         from future_clients fc
-         where fc.company_id = ?
-           and fc.designer_id is not null
-           and fc.next_contact_date is not null
-           and fc.next_contact_date <= ?
-           and fc.status not in ('CONVERTIDO','PERDIDO')
-           and fc.next_contact_date >= date_sub(?, interval 30 day)
-         order by fc.next_contact_date asc
-         limit 20"
-    );
-    $futureStmt->execute([$companyId, $date, $date]);
-    foreach ($futureStmt->fetchAll() as $future) {
-        $title = 'Retomar cliente futuro: ' . $future['name'];
-        $description = 'Próximo contato estava marcado para ' . date_br($future['next_contact_date']) . '. Interesse: ' . ($future['interest'] ?: '-');
-        $generated += insert_auto_checklist_item($companyId, (int) $future['designer_id'], null, $date, $title, $description, 'ALTA', "future-client:{$future['id']}:{$future['next_contact_date']}") ? 1 : 0;
-    }
-
-    $staleDesignerStmt = db()->prepare(
-        "select p.*
-         from client_projects p
-         where p.company_id = ?
-           and p.designer_id is not null
-           and p.current_stage in ('PROJETO','NEGOCIACAO')
-           and date(coalesce(p.updated_at, p.created_at)) <= date_sub(?, interval 7 day)
-           and (p.negotiation_status is null or p.negotiation_status not in ('Desistida','Perdido'))
-         order by coalesce(p.updated_at, p.created_at) asc
-         limit 12"
-    );
-    $staleDesignerStmt->execute([$companyId, $date]);
-    foreach ($staleDesignerStmt->fetchAll() as $project) {
-        $title = 'Projeto parado: ' . $project['client_name'] . ' - ' . $project['project_name'];
-        $description = 'Sem atualização recente em ' . stage_label($project['current_stage']) . '. Revisar próxima ação e status.';
-        $generated += insert_auto_checklist_item($companyId, (int) $project['designer_id'], (int) $project['id'], $date, $title, $description, 'NORMAL', "stale-designer:{$project['id']}:{$project['current_stage']}") ? 1 : 0;
-    }
-
-    if ($conferenceTargets) {
-        $staleOpsStmt = db()->prepare(
-            "select p.*
-             from client_projects p
-             where p.company_id = ?
-               and p.current_stage in ('CONFERENCIA','MONTAGEM','ASSISTENCIA')
-               and date(coalesce(p.updated_at, p.created_at)) <= date_sub(?, interval 5 day)
-             order by coalesce(p.updated_at, p.created_at) asc
-             limit 12"
-        );
-        $staleOpsStmt->execute([$companyId, $date]);
-        foreach ($staleOpsStmt->fetchAll() as $project) {
-            foreach ($conferenceTargets as $targetUserId) {
-                $title = 'Conferir pendência: ' . $project['client_name'] . ' - ' . $project['project_name'];
-                $description = 'Projeto sem movimentação recente em ' . stage_label($project['current_stage']) . '. Validar se pode avançar.';
-                $generated += insert_auto_checklist_item($companyId, $targetUserId, (int) $project['id'], $date, $title, $description, 'NORMAL', "stale-ops:{$project['id']}:{$project['current_stage']}") ? 1 : 0;
-            }
-        }
-    }
-
-    $financeStmt = db()->prepare(
-        "select p.*
-         from client_projects p
-         left join financial_sales fs on fs.client_project_id = p.id and fs.company_id = p.company_id
-         where p.company_id = ?
-           and p.designer_id is not null
-           and fs.id is null
-           and (p.negotiation_status = 'Fechado' or (p.closed_value is not null and p.closed_value > 0))
-           and coalesce(p.closing_date, date(p.updated_at), date(p.created_at)) between date_sub(?, interval 30 day) and ?
-         order by coalesce(p.closing_date, p.updated_at, p.created_at) desc
-         limit 12"
-    );
-    $financeStmt->execute([$companyId, $date, $date]);
-    foreach ($financeStmt->fetchAll() as $project) {
-        $title = 'Lançar venda no financeiro: ' . $project['client_name'] . ' - ' . $project['project_name'];
-        $description = 'Projeto fechado ainda não tem venda vinculada no financeiro.';
-        $generated += insert_auto_checklist_item($companyId, (int) $project['designer_id'], (int) $project['id'], $date, $title, $description, 'ALTA', "finance-missing:{$project['id']}") ? 1 : 0;
-    }
-
-    return $generated;
-}
-
 function checklist_item_allowed(array $item, array $user, bool $isAdmin): bool
 {
     return $isAdmin || (int) $item['user_id'] === (int) $user['id'];
@@ -270,10 +106,6 @@ $employeesStmt = db()->prepare("select id, name, role from users where company_i
 $employeesStmt->execute([$companyId]);
 $employees = $employeesStmt->fetchAll();
 $employeeIds = array_map(fn($employee) => (int) $employee['id'], $employees);
-$autoGenerated = 0;
-foreach ($periodDates as $periodDate) {
-    $autoGenerated += generate_daily_auto_items($companyId, $periodDate, $employees);
-}
 
 $selectedUserId = $isAdmin ? (int) ($_GET['user_id'] ?? 0) : $userId;
 if (!$isAdmin || $selectedUserId <= 0) {
@@ -602,7 +434,6 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <div class="flex flex-col gap-1 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h3 class="font-bold">Itens de <?= e($periodLabel) ?></h3>
-                    <p class="text-sm text-slate-500"><?= $autoGenerated > 0 ? $autoGenerated . ' nova(s) pendência(s) automática(s) criada(s).' : 'As regras automáticas já foram verificadas.' ?></p>
                 </div>
                 <span class="text-sm font-semibold text-slate-500"><?= count($items) ?> <?= count($items) === 1 ? 'item' : 'itens' ?></span>
             </div>
