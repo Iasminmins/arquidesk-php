@@ -8,6 +8,8 @@ require_active_subscription($user);
 $companyId = (int) $user['company_id'];
 $userId = (int) $user['id'];
 $isAdmin = $user['role'] === 'ADMIN_EMPRESA';
+$isDesigner = $user['role'] === 'PROJETISTA';
+$canManageTeam = $isAdmin || $isDesigner;
 $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 $date = $_GET['date'] ?? $today;
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -95,23 +97,35 @@ function ensure_daily_checklist_schema(): void
     }
 }
 
-function checklist_item_allowed(array $item, array $user, bool $isAdmin): bool
+function checklist_item_allowed(array $item, array $user, bool $isAdmin, array $manageableUserIds = []): bool
 {
-    return $isAdmin || (int) $item['user_id'] === (int) $user['id'];
+    return $isAdmin || (int) $item['user_id'] === (int) $user['id'] || in_array((int) $item['user_id'], $manageableUserIds, true);
 }
 
 ensure_daily_checklist_schema();
 
-$employeesStmt = db()->prepare("select id, name, role from users where company_id = ? and active = 1 and role in ('ADMIN_EMPRESA','PROJETISTA','CONFERENTE') order by name");
-$employeesStmt->execute([$companyId]);
+$employeesSql = "select id, name, role from users where company_id = ? and active = 1";
+$employeesParams = [$companyId];
+if ($isDesigner) {
+    $employeesSql .= " and (id = ? or (role = 'ESTAGIARIO' and supervisor_user_id = ?))";
+    $employeesParams[] = $userId;
+    $employeesParams[] = $userId;
+} elseif (!$isAdmin) {
+    $employeesSql .= ' and id = ?';
+    $employeesParams[] = $userId;
+}
+$employeesSql .= ' order by name';
+$employeesStmt = db()->prepare($employeesSql);
+$employeesStmt->execute($employeesParams);
 $employees = $employeesStmt->fetchAll();
 $employeeIds = array_map(fn($employee) => (int) $employee['id'], $employees);
+$manageableUserIds = $isDesigner ? array_values(array_filter($employeeIds, fn(int $id): bool => $id !== $userId)) : [];
 
-$selectedUserId = $isAdmin ? (int) ($_GET['user_id'] ?? 0) : $userId;
-if (!$isAdmin || $selectedUserId <= 0) {
-    $selectedUserId = $isAdmin ? 0 : $userId;
+$selectedUserId = $canManageTeam ? (int) ($_GET['user_id'] ?? 0) : $userId;
+if (!$canManageTeam || $selectedUserId <= 0) {
+    $selectedUserId = $canManageTeam ? 0 : $userId;
 }
-if ($isAdmin && $selectedUserId > 0 && !in_array($selectedUserId, $employeeIds, true)) {
+if ($canManageTeam && $selectedUserId > 0 && !in_array($selectedUserId, $employeeIds, true)) {
     $selectedUserId = 0;
 }
 
@@ -120,13 +134,12 @@ $projectsSql = "select p.id, p.client_name, p.project_name, p.current_stage, u.n
     left join users u on u.id = p.designer_id
     where p.company_id = ?";
 $projectsParams = [$companyId];
-$myDaySupervisorId = intern_supervisor_filter_id($user);
 if ($user['role'] === 'PROJETISTA') {
     $projectsSql .= ' and p.designer_id = ?';
     $projectsParams[] = $userId;
-} elseif ($myDaySupervisorId !== null) {
-    $projectsSql .= ' and p.designer_id = ?';
-    $projectsParams[] = $myDaySupervisorId;
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $projectsSql .= ' and p.intern_user_id = ?';
+    $projectsParams[] = $userId;
 }
 $projectsSql .= ' order by p.updated_at desc, p.created_at desc limit 300';
 $projectsStmt = db()->prepare($projectsSql);
@@ -138,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (in_array($action, ['create', 'update'], true)) {
         $itemId = (int) ($_POST['id'] ?? 0);
-        $targetUserId = $isAdmin ? (int) ($_POST['user_id'] ?? 0) : $userId;
+        $targetUserId = $canManageTeam ? (int) ($_POST['user_id'] ?? 0) : $userId;
         if (!$targetUserId || !in_array($targetUserId, $employeeIds, true)) {
             $targetUserId = $userId;
         }
@@ -160,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $status = 'PENDENTE';
         }
         if ($title === '') {
-            redirect(my_day_url($date, $isAdmin, $selectedUserId, ['error' => 'title']));
+            redirect(my_day_url($date, $canManageTeam, $selectedUserId, ['error' => 'title']));
         }
 
         if ($action === 'create') {
@@ -177,13 +190,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $userId,
                 $status === 'CONCLUIDO' ? date('Y-m-d H:i:s') : null,
             ]);
-            redirect(my_day_url($itemDate, $isAdmin, $selectedUserId, ['ok' => 'created']));
+            redirect(my_day_url($itemDate, $canManageTeam, $selectedUserId, ['ok' => 'created']));
         }
 
         $itemStmt = db()->prepare('select * from daily_checklist_items where id = ? and company_id = ? limit 1');
         $itemStmt->execute([$itemId, $companyId]);
         $item = $itemStmt->fetch();
-        if ($item && checklist_item_allowed($item, $user, $isAdmin)) {
+        if ($item && checklist_item_allowed($item, $user, $isAdmin, $manageableUserIds)) {
             $stmt = db()->prepare(
                 "update daily_checklist_items
                  set user_id = ?, client_project_id = ?, title = ?, description = ?, checklist_date = ?, priority = ?, status = ?,
@@ -202,9 +215,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $itemId,
                 $companyId,
             ]);
-            redirect(my_day_url($itemDate, $isAdmin, $selectedUserId, ['ok' => 'updated']));
+            redirect(my_day_url($itemDate, $canManageTeam, $selectedUserId, ['ok' => 'updated']));
         }
-        redirect(my_day_url($date, $isAdmin, $selectedUserId, ['error' => 'not-found']));
+        redirect(my_day_url($date, $canManageTeam, $selectedUserId, ['error' => 'not-found']));
     }
 
     if (in_array($action, ['complete', 'reopen', 'cancel', 'delete'], true)) {
@@ -213,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $itemStmt->execute([$itemId, $companyId]);
         $item = $itemStmt->fetch();
 
-        if ($item && checklist_item_allowed($item, $user, $isAdmin)) {
+        if ($item && checklist_item_allowed($item, $user, $isAdmin, $manageableUserIds)) {
             if ($action === 'delete') {
                 db()->prepare('delete from daily_checklist_items where id = ? and company_id = ?')->execute([$itemId, $companyId]);
             } elseif ($action === 'complete') {
@@ -224,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db()->prepare("update daily_checklist_items set status = 'CANCELADO', completed_at = null where id = ?")->execute([$itemId]);
             }
         }
-        redirect(my_day_url($date, $isAdmin, $selectedUserId, ['ok' => 'updated']));
+        redirect(my_day_url($date, $canManageTeam, $selectedUserId, ['ok' => 'updated']));
     }
 }
 
@@ -234,10 +247,10 @@ $itemsSql = "select d.*, p.client_name, p.project_name, p.current_stage, u.name 
     left join client_projects p on p.id = d.client_project_id
     where d.company_id = ? and d.checklist_date between ? and ?";
 $itemsParams = [$companyId, $periodStartDate, $periodEndDate];
-if ($isAdmin && $selectedUserId > 0) {
+if ($canManageTeam && $selectedUserId > 0) {
     $itemsSql .= ' and d.user_id = ?';
     $itemsParams[] = $selectedUserId;
-} elseif (!$isAdmin) {
+} elseif (!$canManageTeam) {
     $itemsSql .= ' and d.user_id = ?';
     $itemsParams[] = $userId;
 }
@@ -312,9 +325,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <span class="text-xs font-bold uppercase tracking-wide text-white/60">Rotina inteligente</span>
                 <h2 class="mt-2 text-2xl font-black"><?= $view === 'week' ? 'Minha Semana' : 'Meu Dia' ?></h2>
                 <div class="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/80">
-                    <a class="inline-flex min-h-9 items-center rounded-md border border-white/15 bg-white/10 px-3 hover:bg-white/15" href="<?= e(my_day_url($previousDate, $isAdmin, $selectedUserId)) ?>"><?= $view === 'week' ? 'Semana anterior' : 'Dia anterior' ?></a>
+                    <a class="inline-flex min-h-9 items-center rounded-md border border-white/15 bg-white/10 px-3 hover:bg-white/15" href="<?= e(my_day_url($previousDate, $canManageTeam, $selectedUserId)) ?>"><?= $view === 'week' ? 'Semana anterior' : 'Dia anterior' ?></a>
                     <span class="inline-flex min-h-9 items-center rounded-md bg-white px-3 text-ink"><?= e($periodLabel) ?></span>
-                    <a class="inline-flex min-h-9 items-center rounded-md border border-white/15 bg-white/10 px-3 hover:bg-white/15" href="<?= e(my_day_url($nextDate, $isAdmin, $selectedUserId)) ?>"><?= $view === 'week' ? 'Proxima semana' : 'Proximo dia' ?></a>
+                    <a class="inline-flex min-h-9 items-center rounded-md border border-white/15 bg-white/10 px-3 hover:bg-white/15" href="<?= e(my_day_url($nextDate, $canManageTeam, $selectedUserId)) ?>"><?= $view === 'week' ? 'Proxima semana' : 'Proximo dia' ?></a>
                 </div>
                 <p class="mt-1 max-w-3xl text-sm text-white/70">Pendências manuais e automáticas em um único lugar, sempre editáveis pela equipe.</p>
             </div>
@@ -328,7 +341,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <label class="grid gap-1 text-sm font-semibold text-white/80">Data
                     <input class="min-h-10 w-full min-w-0 rounded-md border border-white/20 bg-white px-3 text-ink outline-none focus:border-white" type="date" name="date" value="<?= e($date) ?>">
                 </label>
-                <?php if ($isAdmin): ?>
+                <?php if ($canManageTeam): ?>
                     <label class="grid gap-1 text-sm font-semibold text-white/80">Funcionário
                         <select class="min-h-10 w-full min-w-0 rounded-md border border-white/20 bg-white px-3 text-ink outline-none focus:border-white" name="user_id">
                             <option value="0">Todos</option>
@@ -363,7 +376,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <div class="grid gap-2 border-t border-line bg-fog/50 p-4 sm:grid-cols-2 lg:grid-cols-7">
                 <?php foreach ($periodDates as $periodDate): ?>
                     <?php $isSelectedPeriodDate = $periodDate === $date; ?>
-                    <a href="<?= e(my_day_url($periodDate, $isAdmin, $selectedUserId, ['view' => 'week'])) ?>#day-<?= e($periodDate) ?>" class="rounded-lg border p-3 text-sm hover:border-ink <?= $isSelectedPeriodDate ? 'border-ink bg-white shadow-sm ring-2 ring-ink/10' : 'border-line bg-white' ?>">
+                    <a href="<?= e(my_day_url($periodDate, $canManageTeam, $selectedUserId, ['view' => 'week'])) ?>#day-<?= e($periodDate) ?>" class="rounded-lg border p-3 text-sm hover:border-ink <?= $isSelectedPeriodDate ? 'border-ink bg-white shadow-sm ring-2 ring-ink/10' : 'border-line bg-white' ?>">
                         <span class="block text-xs font-bold uppercase text-slate-400"><?= e($weekdayLabels[(int) date('w', strtotime($periodDate))]) ?></span>
                         <strong class="mt-1 block"><?= e(date_br($periodDate)) ?></strong>
                         <span class="mt-2 block text-xs text-slate-500"><?= (int) $dayStats[$periodDate]['PENDENTE'] ?> pend. / <?= (int) $dayStats[$periodDate]['CONCLUIDO'] ?> concl.</span>
@@ -389,7 +402,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                 <label class="grid min-w-0 gap-1 text-sm font-semibold">Data do item
                     <input class="min-h-10 w-full min-w-0 rounded-md border border-line px-3 outline-none focus:border-ink" type="date" name="checklist_date" value="<?= e($date) ?>">
                 </label>
-                <?php if ($isAdmin): ?>
+                <?php if ($canManageTeam): ?>
                     <label class="grid min-w-0 gap-1 text-sm font-semibold">Responsável
                         <select class="min-h-10 w-full min-w-0 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" name="user_id">
                             <?php foreach ($employees as $employee): ?>
@@ -463,7 +476,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                     <span class="rounded-full border px-2.5 py-1 text-xs font-semibold <?= e($sourceClasses[$item['source'] ?? 'MANUAL'] ?? $sourceClasses['MANUAL']) ?>"><?= ($item['source'] ?? 'MANUAL') === 'AUTO' ? 'Automático' : 'Manual' ?></span>
                                 </div>
                                 <div class="mt-2 grid gap-1 text-sm text-slate-500">
-                                    <?php if ($isAdmin): ?><span>Responsável: <?= e($item['user_name']) ?> - <?= e(role_label($item['user_role'])) ?></span><?php endif; ?>
+                                    <?php if ($canManageTeam): ?><span>Responsável: <?= e($item['user_name']) ?> - <?= e(role_label($item['user_role'])) ?></span><?php endif; ?>
                                     <?php if ($item['client_project_id']): ?>
                                         <span>Projeto: <?= e($item['client_name']) ?> - <?= e($item['project_name']) ?> (<?= e(stage_label($item['current_stage'])) ?>)</span>
                                     <?php endif; ?>
@@ -516,7 +529,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                     </label>
                                 </div>
                                 <div class="grid gap-3 lg:grid-cols-4">
-                                    <?php if ($isAdmin): ?>
+                                    <?php if ($canManageTeam): ?>
                                         <label class="grid min-w-0 gap-1 text-sm font-semibold">Responsável
                                             <select class="min-h-10 w-full min-w-0 rounded-md border border-line bg-white px-3 outline-none focus:border-ink" name="user_id">
                                                 <?php foreach ($employees as $employee): ?>

@@ -4,7 +4,7 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
-if (!in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)) {
+if ($user['role'] !== 'ADMIN_EMPRESA') {
     http_response_code(403);
     exit('Acesso restrito.');
 }
@@ -96,11 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $pdo->prepare('delete from intern_permissions where intern_user_id = ?')->execute([$internId]);
                 $permissionStmt = $pdo->prepare('insert into intern_permissions (company_id, intern_user_id, tab_key, access_level) values (?, ?, ?, ?)');
-                foreach (array_keys($tabs) as $tabKey) {
-                    $level = $_POST['permission'][$tabKey] ?? 'NONE';
-                    if (in_array($level, ['VIEW', 'EDIT', 'DELETE'], true)) {
-                        $permissionStmt->execute([$companyId, $internId, $tabKey, $level]);
-                    }
+                foreach (['my_day' => 'EDIT', 'projects' => 'EDIT'] as $tabKey => $level) {
+                    $permissionStmt->execute([$companyId, $internId, $tabKey, $level]);
                 }
                 $pdo->commit();
                 redirect('/interns.php?ok=1');
@@ -142,7 +139,7 @@ $form = $editIntern ?: [];
 ?>
 <section class="grid gap-5">
     <div class="rounded-lg border border-line bg-white p-4 text-sm text-slate-600">
-        Estagiários contam no limite do plano. Cada aba pode ser bloqueada ou liberada para visualizar, editar e excluir.
+        Estagiários contam no limite do plano e acessam somente Meu Dia, Projeto e Negociação.
     </div>
     <?php if (!empty($_GET['ok'])): ?><div class="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">Operação concluída.</div><?php endif; ?>
     <?php if ($error): ?><div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><?= e($error) ?></div><?php endif; ?>
@@ -171,24 +168,6 @@ $form = $editIntern ?: [];
             <?php endif; ?>
         </div>
 
-        <fieldset class="grid gap-2">
-            <legend class="text-sm font-bold">Dados visíveis</legend>
-            <label class="flex items-center gap-2 text-sm"><input type="radio" name="data_scope" value="SUPERVISOR" <?= ($form['intern_data_scope'] ?? 'SUPERVISOR') === 'SUPERVISOR' ? 'checked' : '' ?>> Somente projetos e clientes do projetista responsável</label>
-            <label class="flex items-center gap-2 text-sm"><input type="radio" name="data_scope" value="COMPANY" <?= ($form['intern_data_scope'] ?? '') === 'COMPANY' ? 'checked' : '' ?>> Todos os projetos e clientes da empresa</label>
-        </fieldset>
-
-        <div class="overflow-x-auto rounded-md border border-line">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-fog"><tr><th class="p-3">Aba</th><th class="p-3">Permissão</th></tr></thead>
-                <tbody>
-                    <?php foreach ($tabs as $tabKey => $tabLabel): ?>
-                        <tr class="border-t border-line"><td class="p-3 font-semibold"><?= e($tabLabel) ?></td><td class="p-3"><select class="min-h-10 w-full max-w-xs rounded-md border border-line px-3" name="permission[<?= e($tabKey) ?>]">
-                            <?php foreach ($levels as $levelKey => $levelLabel): ?><option value="<?= e($levelKey) ?>" <?= ($editPermissions[$tabKey] ?? 'NONE') === $levelKey ? 'selected' : '' ?>><?= e($levelLabel) ?></option><?php endforeach; ?>
-                        </select></td></tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
         <div class="flex gap-2"><button class="min-h-11 rounded-md bg-ink px-5 font-bold text-white" type="submit"><?= $editIntern ? 'Salvar alterações' : 'Criar estagiário' ?></button><?php if ($editIntern): ?><a class="inline-flex min-h-11 items-center rounded-md border border-line px-5 font-semibold" href="/interns.php">Cancelar</a><?php endif; ?></div>
     </form>
 

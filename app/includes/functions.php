@@ -109,7 +109,6 @@ function role_nav(string $role): array
             '/project-files.php' => 'Arquivos de Projetos',
             '/goals.php?mode=my-goal' => 'Minha Meta',
             '/import-export.php' => 'Minhas Exportações',
-            '/interns.php' => 'Meus Estagiários',
         ],
         'CONFERENTE' => [
             '/' => 'Dashboard',
@@ -126,21 +125,9 @@ function role_nav(string $role): array
             '/import-export.php' => 'Exportações Operacionais',
         ],
         'ESTAGIARIO' => [
-            '/' => 'Dashboard',
             '/my-day.php' => 'Meu Dia',
-            '/schedule.php' => 'Agendamentos',
-            '/future-clients.php' => 'Clientes Futuros',
             '/projects.php?stage=PROJETO' => 'Projeto',
             '/projects.php?stage=NEGOCIACAO' => 'Negociação',
-            '/projects.php?stage=CONFERENCIA' => 'Conferência',
-            '/projects.php?stage=MONTAGEM' => 'Montagem',
-            '/projects.php?stage=ASSISTENCIA' => 'Assistência',
-            '/projects.php?stage=FINALIZADO' => 'Finalizados',
-            '/finance.php' => 'Financeiro',
-            '/contracts.php' => 'Contratos',
-            '/project-files.php' => 'Arquivos de Projetos',
-            '/goals.php' => 'Metas',
-            '/import-export.php' => 'Importar / Exportar',
         ],
         'SUPER_ADMIN' => [
             '/super-admin.php' => 'Dashboard SaaS',
@@ -166,6 +153,7 @@ function role_nav(string $role): array
             '/import-export.php' => 'Importar / Exportar',
             '/employees.php' => 'Funcionários',
             '/interns.php' => 'Estagiários',
+            '/projects.php?layout=table&stage=PROJETO&assignment=intern' => 'Projetos Estagiários',
             '/company-settings.php' => 'Configurações da Empresa',
             '/subscription.php' => 'Assinatura / Plano',
         ],
@@ -175,7 +163,7 @@ function role_nav(string $role): array
 function can_write_project(array $user, string $stage): bool
 {
     if ($user['role'] === 'ESTAGIARIO') {
-        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'EDIT');
+        return in_array($stage, ['PROJETO', 'NEGOCIACAO'], true);
     }
     if ($user['role'] === 'CONFERENTE') {
         return in_array($stage, ['CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA'], true);
@@ -187,7 +175,7 @@ function can_write_project(array $user, string $stage): bool
 function can_create_project(array $user, string $stage): bool
 {
     if ($user['role'] === 'ESTAGIARIO') {
-        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'EDIT') && in_array($stage, ['PROJETO', 'ASSISTENCIA'], true);
+        return false;
     }
     return $user['role'] !== 'CONFERENTE' && in_array($stage, ['PROJETO', 'ASSISTENCIA'], true);
 }
@@ -195,7 +183,7 @@ function can_create_project(array $user, string $stage): bool
 function can_delete_project(array $user): bool
 {
     if ($user['role'] === 'ESTAGIARIO') {
-        return intern_has_permission(intern_permissions_for_user((int) $user['id']), 'projects', 'DELETE');
+        return false;
     }
     return in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true);
 }

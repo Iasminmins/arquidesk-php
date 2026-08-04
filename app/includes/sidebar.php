@@ -1,8 +1,5 @@
 <?php
 $nav = role_nav($user['role']);
-if ($user['role'] === 'ESTAGIARIO') {
-    $nav = intern_filter_nav($nav, intern_permissions_for_user((int) $user['id']));
-}
 $currentPath = strtok($_SERVER['REQUEST_URI'], '?');
 $currentStage = $_GET['stage'] ?? '';
 $currentView = $_GET['view'] ?? '';
@@ -32,16 +29,21 @@ $companyLogo = $companyStmt->fetchColumn() ?: '';
         <nav class="grid gap-1 p-3">
             <?php foreach ($nav as $href => $label): ?>
                 <?php
-                $isStage = str_contains($href, 'stage=');
-                $targetStage = $isStage ? substr($href, strpos($href, 'stage=') + 6) : '';
-                $isView = str_contains($href, 'view=');
-                $targetView = $isView ? substr($href, strpos($href, 'view=') + 5) : '';
+                $linkQuery = [];
+                parse_str((string) parse_url($href, PHP_URL_QUERY), $linkQuery);
+                $isStage = isset($linkQuery['stage']);
+                $targetStage = $linkQuery['stage'] ?? '';
+                $isView = isset($linkQuery['view']);
+                $targetView = $linkQuery['view'] ?? '';
                 $pathOnly = strtok($href, '?');
                 $active = $href === '/'
                     ? $currentPath === '/' || $currentPath === '/index.php'
                     : ($currentPath === '/projects.php' && $currentStage === $targetStage);
                 if ($isView) {
                     $active = $currentPath === $pathOnly && $currentView === $targetView;
+                }
+                if (isset($linkQuery['assignment'])) {
+                    $active = $active && ($_GET['assignment'] ?? '') === $linkQuery['assignment'];
                 }
                 if (!$isStage && !$isView && $href !== '/') {
                     $active = $currentPath === $pathOnly && ($currentPath !== '/super-admin.php' || $currentView === '');

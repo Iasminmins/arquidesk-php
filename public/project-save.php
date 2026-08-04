@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
+ensure_intern_permissions_schema();
 $companyId = (int) $user['company_id'];
 $id = (int) ($_POST['id'] ?? 0);
 $stage = $_POST['current_stage'] ?? 'PROJETO';
@@ -14,6 +15,10 @@ if ($id) {
     $existing = $existingStmt->fetch();
     if (!$existing) {
         redirect('/projects.php');
+    }
+    if ($user['role'] === 'PROJETISTA' && (int) $existing['designer_id'] !== (int) $user['id']) {
+        http_response_code(403);
+        exit('Sem permissão para editar este projeto.');
     }
 }
 
@@ -64,16 +69,37 @@ $data = [
     'order_date' => posted_date('order_date', $existing['order_date'] ?? null),
     'assistance_date' => posted_date('assistance_date', $existing['assistance_date'] ?? null),
     'notes' => posted_trim('notes', $existing['notes'] ?? ''),
+    'intern_user_id' => (int) posted_value('intern_user_id', $existing['intern_user_id'] ?? 0) ?: null,
 ];
 $restrictedDesignerId = intern_supervisor_filter_id($user);
 if ($restrictedDesignerId !== null) {
     $data['designer_id'] = $restrictedDesignerId;
 }
+if ($user['role'] === 'ESTAGIARIO') {
+    $data['intern_user_id'] = (int) ($existing['intern_user_id'] ?? 0) ?: null;
+} elseif ($data['intern_user_id']) {
+    $internSql = "select count(*) from users where id = ? and company_id = ? and role = 'ESTAGIARIO' and active = 1";
+    $internParams = [$data['intern_user_id'], $companyId];
+    if ($user['role'] === 'PROJETISTA') {
+        $internSql .= ' and supervisor_user_id = ?';
+        $internParams[] = (int) $user['id'];
+    }
+    $internStmt = db()->prepare($internSql);
+    $internStmt->execute($internParams);
+    if (!(int) $internStmt->fetchColumn()) {
+        http_response_code(422);
+        exit('Estagiária inválida para este projeto.');
+    }
+}
+if (!empty($_POST['for_intern']) && !$data['intern_user_id']) {
+    http_response_code(422);
+    exit('Selecione uma estagiária para este projeto.');
+}
 
 if ($id) {
     $stmt = db()->prepare(
         'update client_projects
-         set designer_id = ?, client_name = ?, client_address = ?, client_phone = ?, project_name = ?,
+         set designer_id = ?, intern_user_id = ?, client_name = ?, client_address = ?, client_phone = ?, project_name = ?,
              project_status = ?, negotiation_status = ?, new_proposal_value = ?, closed_value = ?, entry_date = ?, presentation_date = ?,
              closing_date = ?, conference_status = ?, measurement_date = ?, sent_to_factory_date = ?, billing_date = ?,
              assembly_status = ?, assembly_started_date = ?, assembly_finished_date = ?,
@@ -82,6 +108,7 @@ if ($id) {
     );
     $stmt->execute([
         $data['designer_id'],
+        $data['intern_user_id'],
         $data['client_name'],
         $data['client_address'],
         $data['client_phone'],
@@ -110,15 +137,16 @@ if ($id) {
 } else {
     $stmt = db()->prepare(
         'insert into client_projects
-         (company_id, designer_id, client_name, client_address, client_phone, project_name, current_stage,
+         (company_id, designer_id, intern_user_id, client_name, client_address, client_phone, project_name, current_stage,
           project_status, negotiation_status, new_proposal_value, closed_value, entry_date, presentation_date, closing_date,
           conference_status, measurement_date, sent_to_factory_date, billing_date, assembly_status, assembly_started_date,
           assembly_finished_date, assistance_status, order_date, assistance_date, notes)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $companyId,
         $data['designer_id'],
+        $data['intern_user_id'],
         $data['client_name'],
         $data['client_address'],
         $data['client_phone'],

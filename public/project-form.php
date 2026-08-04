@@ -4,10 +4,12 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
+ensure_intern_permissions_schema();
 $companyId = (int) $user['company_id'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $stage = $_GET['stage'] ?? 'PROJETO';
 $project = null;
+$forIntern = !empty($_GET['for_intern']);
 $restrictedDesignerId = intern_supervisor_filter_id($user);
 
 if ($id) {
@@ -17,7 +19,12 @@ if ($id) {
     if (!$project) {
         redirect('/projects.php');
     }
+    if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+        http_response_code(403);
+        exit('Sem permissão para editar este projeto.');
+    }
     $stage = $project['current_stage'];
+    $forIntern = !empty($project['intern_user_id']);
 }
 
 $designersStmt = db()->prepare("select id, name from users where company_id = ? and active = 1 and role in ('ADMIN_EMPRESA','PROJETISTA') order by name");
@@ -27,8 +34,23 @@ if ($restrictedDesignerId !== null) {
     $designers = array_values(array_filter($designers, static fn(array $designer): bool => (int) $designer['id'] === $restrictedDesignerId));
 }
 
+$internSql = "select id, name from users where company_id = ? and role = 'ESTAGIARIO' and active = 1";
+$internParams = [$companyId];
+if ($user['role'] === 'PROJETISTA') {
+    $internSql .= ' and supervisor_user_id = ?';
+    $internParams[] = (int) $user['id'];
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $internSql .= ' and id = ?';
+    $internParams[] = (int) $user['id'];
+}
+$internSql .= ' order by name';
+$internStmt = db()->prepare($internSql);
+$internStmt->execute($internParams);
+$interns = $internStmt->fetchAll();
+
 $statusOptions = status_options($stage);
 $pageTitle = $project ? 'Editar projeto' : ($stage === 'ASSISTENCIA' ? 'Criar assistência' : 'Criar projeto');
+if ($forIntern) $pageTitle = $project ? 'Editar projeto da estagiária' : 'Criar projeto para estagiária';
 
 require __DIR__ . '/../app/includes/header.php';
 require __DIR__ . '/../app/includes/sidebar.php';
@@ -37,6 +59,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?= csrf_field() ?>
     <input type="hidden" name="id" value="<?= (int) ($project['id'] ?? 0) ?>">
     <input type="hidden" name="current_stage" value="<?= e($stage) ?>">
+    <input type="hidden" name="for_intern" value="<?= $forIntern ? '1' : '0' ?>">
 
     <section class="rounded-lg border border-line bg-white p-4">
         <h2 class="font-bold">Dados do cliente e projeto</h2>
@@ -66,6 +89,16 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     <input type="hidden" name="designer_id" value="<?= (int) ($restrictedDesignerId ?? $user['id']) ?>">
                 <?php endif; ?>
             </label>
+            <?php if ($forIntern): ?>
+                <label class="grid gap-1 text-sm font-semibold">Estagiária responsável
+                    <select class="min-h-10 rounded-md border border-line px-3 outline-none focus:border-ink" name="intern_user_id" required <?= $user['role'] === 'ESTAGIARIO' ? 'disabled' : '' ?>>
+                        <option value="">Selecione</option>
+                        <?php foreach ($interns as $intern): ?><option value="<?= (int) $intern['id'] ?>" <?= (int) ($project['intern_user_id'] ?? 0) === (int) $intern['id'] ? 'selected' : '' ?>><?= e($intern['name']) ?></option><?php endforeach; ?>
+                    </select>
+                    <?php if ($user['role'] === 'ESTAGIARIO'): ?><input type="hidden" name="intern_user_id" value="<?= (int) $user['id'] ?>"><?php endif; ?>
+                    <?php if (!$interns): ?><span class="text-xs text-red-600">Nenhuma estagiária ativa vinculada. O proprietário precisa criar o acesso primeiro.</span><?php endif; ?>
+                </label>
+            <?php endif; ?>
         </div>
     </section>
 

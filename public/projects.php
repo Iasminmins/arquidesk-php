@@ -4,38 +4,54 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_active_subscription($user);
+ensure_intern_permissions_schema();
 $layout = $_GET['layout'] ?? ($_COOKIE['projects_layout'] ?? 'kanban');
 if (!in_array($layout, ['kanban', 'table'], true)) {
     $layout = 'kanban';
 }
 setcookie('projects_layout', $layout, time() + 31536000, '/');
 $stage = $_GET['stage'] ?? 'PROJETO';
-$allowedStages = ['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'];
+$allowedStages = intern_allowed_project_stages($user);
 if (!in_array($stage, $allowedStages, true)) {
     $stage = 'PROJETO';
 }
 
 $view = $_GET['view'] ?? 'active';
+$assignment = $_GET['assignment'] ?? '';
 $pageTitle = $layout === 'kanban' ? 'Projetos' : stage_label($stage);
 $primaryColor = $user['primary_color'] ?? '#15201d';
 $companyId = (int) $user['company_id'];
 $search = trim($_GET['q'] ?? '');
 $currentOrder = stage_order($stage);
 
-$baseSql = "select p.*, u.name as designer_name
+$internCountSql = 'select count(*) from client_projects where company_id = ? and intern_user_id is not null';
+$internCountParams = [$companyId];
+if ($user['role'] === 'PROJETISTA') {
+    $internCountSql .= ' and designer_id = ?';
+    $internCountParams[] = (int) $user['id'];
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $internCountSql .= ' and intern_user_id = ?';
+    $internCountParams[] = (int) $user['id'];
+}
+$internCountStmt = db()->prepare($internCountSql);
+$internCountStmt->execute($internCountParams);
+$internProjectCount = (int) $internCountStmt->fetchColumn();
+
+$baseSql = "select p.*, u.name as designer_name, iu.name as intern_name
         from client_projects p
         left join users u on u.id = p.designer_id
+        left join users iu on iu.id = p.intern_user_id
         where p.company_id = ?";
 $params = [$companyId];
-$restrictedDesignerId = intern_supervisor_filter_id($user);
 
 if ($user['role'] === 'PROJETISTA') {
     $baseSql .= " and p.designer_id = ?";
     $params[] = (int) $user['id'];
-} elseif ($restrictedDesignerId !== null) {
-    $baseSql .= " and p.designer_id = ?";
-    $params[] = $restrictedDesignerId;
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $baseSql .= " and p.intern_user_id = ?";
+    $params[] = (int) $user['id'];
 }
+if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $baseSql .= ' and p.intern_user_id is not null';
 
 if ($stage === 'FINALIZADO') {
     $baseSql .= " and p.current_stage = 'FINALIZADO'";
@@ -72,10 +88,11 @@ $countParams = [$companyId];
 if ($user['role'] === 'PROJETISTA') {
     $countSql .= " and designer_id = ?";
     $countParams[] = (int) $user['id'];
-} elseif ($restrictedDesignerId !== null) {
-    $countSql .= " and designer_id = ?";
-    $countParams[] = $restrictedDesignerId;
+} elseif ($user['role'] === 'ESTAGIARIO') {
+    $countSql .= " and intern_user_id = ?";
+    $countParams[] = (int) $user['id'];
 }
+if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $countSql .= ' and intern_user_id is not null';
 $countSql .= " group by current_stage";
 $countStmt = db()->prepare($countSql);
 $countStmt->execute($countParams);
@@ -97,7 +114,8 @@ if ($stage === 'NEGOCIACAO') {
     $dSql = "select count(*) from client_projects where company_id = ? and current_stage = 'NEGOCIACAO' and negotiation_status = 'Desistida'";
     $dParams = [$companyId];
     if ($user['role'] === 'PROJETISTA') { $dSql .= " and designer_id = ?"; $dParams[] = (int) $user['id']; }
-    elseif ($restrictedDesignerId !== null) { $dSql .= " and designer_id = ?"; $dParams[] = $restrictedDesignerId; }
+    elseif ($user['role'] === 'ESTAGIARIO') { $dSql .= " and intern_user_id = ?"; $dParams[] = (int) $user['id']; }
+    if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $dSql .= ' and intern_user_id is not null';
     $dStmt = db()->prepare($dSql);
     $dStmt->execute($dParams);
     $desistidasCount = (int) $dStmt->fetchColumn();
@@ -112,18 +130,20 @@ $canDragKanban = $user['role'] !== 'CONFERENTE' && $canEdit;
 
 $kanbanByStage = array_fill_keys($allowedStages, []);
 if ($layout === 'kanban') {
-    $kanbanSql = "select p.*, u.name as designer_name
+    $kanbanSql = "select p.*, u.name as designer_name, iu.name as intern_name
             from client_projects p
             left join users u on u.id = p.designer_id
+            left join users iu on iu.id = p.intern_user_id
             where p.company_id = ?";
     $kanbanParams = [$companyId];
     if ($user['role'] === 'PROJETISTA') {
         $kanbanSql .= ' and p.designer_id = ?';
         $kanbanParams[] = (int) $user['id'];
-    } elseif ($restrictedDesignerId !== null) {
-        $kanbanSql .= ' and p.designer_id = ?';
-        $kanbanParams[] = $restrictedDesignerId;
+    } elseif ($user['role'] === 'ESTAGIARIO') {
+        $kanbanSql .= ' and p.intern_user_id = ?';
+        $kanbanParams[] = (int) $user['id'];
     }
+    if ($assignment === 'intern' || $user['role'] === 'ESTAGIARIO') $kanbanSql .= ' and p.intern_user_id is not null';
     $kanbanSql .= " and (p.negotiation_status is null or p.negotiation_status != 'Desistida')";
     if ($search !== '') {
         $kanbanSql .= ' and (p.client_name like ? or p.project_name like ? or u.name like ?)';
@@ -171,6 +191,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:flex-1">
             <form method="get" class="flex flex-1 gap-2">
+                <?php if ($assignment === 'intern'): ?><input type="hidden" name="assignment" value="intern"><?php endif; ?>
                 <?php if ($layout === 'table'): ?>
                     <input type="hidden" name="stage" value="<?= e($stage) ?>">
                     <input type="hidden" name="view" value="<?= e($view) ?>">
@@ -190,6 +211,9 @@ require __DIR__ . '/../app/includes/sidebar.php';
             <a class="inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold hover:bg-fog" href="<?= $layout === 'kanban' ? '/export.php?type=projects' : '/export.php?type=stage&stage=' . e($stage) . '&view=' . e($view) ?>">Exportar</a>
             <?php if ($layout === 'kanban' ? (can_create_project($user, 'PROJETO') || can_create_project($user, 'ASSISTENCIA')) : $canCreate): ?>
                 <a class="inline-flex min-h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-bold text-white" href="/project-form.php?stage=<?= e($layout === 'kanban' ? 'PROJETO' : $stage) ?>"><?= ($layout !== 'kanban' && $stage === 'ASSISTENCIA') ? 'Criar assistência' : 'Criar projeto' ?></a>
+            <?php endif; ?>
+            <?php if (in_array($user['role'], ['ADMIN_EMPRESA', 'PROJETISTA'], true)): ?>
+                <a class="inline-flex min-h-10 items-center justify-center rounded-md bg-emerald-800 px-4 text-sm font-bold text-white" href="/project-form.php?stage=PROJETO&for_intern=1">Criar projeto para estagiária</a>
             <?php endif; ?>
         </div>
     </div>
@@ -242,7 +266,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                                         <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold <?= $isStale ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600' ?>"><?= $daysInStage ?>d</span>
                                     </div>
                                     <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                                        <span class="truncate"><?= e($project['designer_name'] ?: 'Sem projetista') ?></span>
+                                        <span class="truncate"><?= e($project['designer_name'] ?: 'Sem projetista') ?><?= !empty($project['intern_name']) ? ' · ' . e($project['intern_name']) : '' ?></span>
                                         <?php if ((float) ($project['closed_value'] ?? 0) > 0): ?>
                                             <span class="shrink-0 font-semibold text-emerald-800"><?= money_br($project['closed_value']) ?></span>
                                         <?php endif; ?>
@@ -257,12 +281,15 @@ require __DIR__ . '/../app/includes/sidebar.php';
     <?php else: ?>
 
     <?php if ($stage !== 'FINALIZADO'): ?>
-        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit <?= $stage === 'NEGOCIACAO' ? 'sm:grid-cols-3' : 'sm:grid-cols-2' ?>">
-            <a class="rounded-md px-4 py-2 <?= $view === 'active' || $view === '' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active">
+        <div class="grid gap-2 rounded-lg border border-line bg-white p-2 text-sm font-semibold sm:inline-grid sm:w-fit <?= $stage === 'NEGOCIACAO' ? 'sm:grid-cols-4' : 'sm:grid-cols-3' ?>">
+            <a class="rounded-md px-4 py-2 <?= ($view === 'active' || $view === '') && $assignment !== 'intern' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active">
                 <?= e(stage_label($stage)) ?> em andamento <span class="ml-2 opacity-70"><?= $activeCount ?></span>
             </a>
             <a class="rounded-md px-4 py-2 <?= $view === 'completed' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=completed">
                 <?= e(stage_label($stage)) ?> finalizados <span class="ml-2 opacity-70"><?= $completedCount ?></span>
+            </a>
+            <a class="rounded-md px-4 py-2 <?= $assignment === 'intern' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=<?= e($stage) ?>&view=active&assignment=intern">
+                Projetos Estagiários <span class="ml-2 opacity-70"><?= $internProjectCount ?></span>
             </a>
             <?php if ($stage === 'NEGOCIACAO'): ?>
             <a class="rounded-md px-4 py-2 <?= $view === 'desistidas' ? 'bg-ink text-white' : 'hover:bg-fog' ?>" href="/projects.php?layout=table&stage=NEGOCIACAO&view=desistidas">
@@ -294,7 +321,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                         <tr class="border-t border-line align-top">
                             <td class="p-3"><strong><?= e($project['client_name']) ?></strong><span class="flex items-center gap-1 text-xs text-slate-500"><?= e($project['client_phone']) ?> <?= whatsapp_link($project['client_phone'] ?? '') ?></span></td>
                             <td class="p-3"><?= e($project['project_name']) ?></td>
-                            <td class="p-3"><?= e($project['designer_name'] ?: '-') ?></td>
+                            <td class="p-3"><?= e($project['designer_name'] ?: '-') ?><?php if (!empty($project['intern_name'])): ?><span class="block text-xs font-semibold text-emerald-700">Estagiária: <?= e($project['intern_name']) ?></span><?php endif; ?></td>
                             <td class="p-3">
                                 <?php $field = status_field_for_stage($stage); ?>
                                 <?php if ($canEdit && $field): ?>

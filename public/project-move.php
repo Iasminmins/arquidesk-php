@@ -4,6 +4,7 @@ require_once __DIR__ . '/../app/includes/auth.php';
 
 $user = require_auth();
 require_csrf();
+ensure_intern_permissions_schema();
 
 if ($user['role'] === 'CONFERENTE') {
     if (wants_json()) {
@@ -27,9 +28,18 @@ if (!$project) {
     }
     redirect('/');
 }
+if ($user['role'] === 'PROJETISTA' && (int) $project['designer_id'] !== (int) $user['id']) {
+    if ($ajax) json_response(['ok' => false, 'error' => 'Sem permissão.'], 403);
+    redirect('/projects.php');
+}
 
 $fromStage = $project['current_stage'];
 $toStage = $_POST['to_stage'] ?? next_stage($fromStage);
+
+if (!intern_can_move_project($user, $fromStage, (string) $toStage)) {
+    if ($ajax) json_response(['ok' => false, 'error' => 'A estagiária pode movimentar somente de Projeto para Negociação.'], 403);
+    redirect('/projects.php?stage=' . urlencode($fromStage) . '&error=' . urlencode('Movimentação não permitida para estagiária.'));
+}
 
 if (!$toStage) {
     if ($ajax) {

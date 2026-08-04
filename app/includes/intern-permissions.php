@@ -67,6 +67,26 @@ function intern_filter_nav(array $nav, array $permissions): array
     );
 }
 
+function intern_can_access_project(array $user, array $project): bool
+{
+    return ($user['role'] ?? '') !== 'ESTAGIARIO' || (int) ($project['intern_user_id'] ?? 0) === (int) ($user['id'] ?? 0);
+}
+
+function intern_allowed_project_stages(array $user): array
+{
+    return ($user['role'] ?? '') === 'ESTAGIARIO'
+        ? ['PROJETO', 'NEGOCIACAO']
+        : ['PROJETO', 'NEGOCIACAO', 'CONFERENCIA', 'MONTAGEM', 'ASSISTENCIA', 'FINALIZADO'];
+}
+
+function intern_can_move_project(array $user, string $fromStage, string $toStage): bool
+{
+    if (($user['role'] ?? '') !== 'ESTAGIARIO') {
+        return true;
+    }
+    return $fromStage === 'PROJETO' && $toStage === 'NEGOCIACAO';
+}
+
 function ensure_intern_permissions_schema(): void
 {
     static $ensured = false;
@@ -97,6 +117,11 @@ function ensure_intern_permissions_schema(): void
         constraint intern_permission_company_fk foreign key (company_id) references companies(id) on delete cascade,
         constraint intern_permission_user_fk foreign key (intern_user_id) references users(id) on delete cascade
     ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci");
+
+    $columnStmt->execute([$dbName, 'client_projects', 'intern_user_id']);
+    if (!(int) $columnStmt->fetchColumn()) {
+        $pdo->exec('alter table client_projects add intern_user_id int unsigned null after designer_id, add index projects_intern_idx (intern_user_id), add constraint projects_intern_fk foreign key (intern_user_id) references users(id) on delete set null');
+    }
 
     $ensured = true;
 }
@@ -160,40 +185,32 @@ function authorize_intern_request(array $user): void
     }
     $tab = intern_tab_for_request($path, $_REQUEST);
     $required = intern_required_level_for_request($path, $_SERVER['REQUEST_METHOD'] ?? 'GET', $_REQUEST);
-    $permissions = intern_permissions_for_user((int) $user['id']);
-    if (($path === '/' || $path === '/index.php') && !intern_has_permission($permissions, 'dashboard', 'VIEW')) {
-        $firstAllowed = array_key_first(intern_filter_nav(role_nav('ESTAGIARIO'), $permissions));
-        if ($firstAllowed !== null) {
-            redirect($firstAllowed);
-        }
+    $permissions = ['my_day' => 'EDIT', 'projects' => 'EDIT'];
+    if ($path === '/' || $path === '/index.php') {
+        redirect('/my-day.php');
     }
     if ($tab === null || !intern_has_permission($permissions, $tab, $required)) {
         http_response_code(403);
         exit('Sem permissão para acessar esta área.');
     }
 
-    $supervisorId = intern_supervisor_filter_id($user);
-    if ($supervisorId === null) {
-        return;
+    if (($path === '/project-form.php' || $path === '/project-save.php') && (int) ($_REQUEST['id'] ?? 0) <= 0) {
+        http_response_code(403);
+        exit('Estagiários não podem criar projetos.');
     }
+    $blockedProjectActions = ['/project-delete.php', '/project-desistir.php', '/project-reativar.php', '/project-to-future.php', '/project-to-future-undo.php', '/project-move-undo.php', '/project-negotiation-undo.php'];
+    if (in_array($path, $blockedProjectActions, true)) {
+        http_response_code(403);
+        exit('Ação não permitida para estagiários.');
+    }
+
     $projectId = (int) ($request['client_project_id'] ?? $request['project_id'] ?? (($tab === 'projects' || $tab === 'project_files') ? ($request['id'] ?? 0) : 0));
     if ($projectId > 0) {
-        $stmt = db()->prepare('select count(*) from client_projects where id = ? and company_id = ? and designer_id = ?');
-        $stmt->execute([$projectId, (int) $user['company_id'], $supervisorId]);
+        $stmt = db()->prepare('select count(*) from client_projects where id = ? and company_id = ? and intern_user_id = ?');
+        $stmt->execute([$projectId, (int) $user['company_id'], (int) $user['id']]);
         if (!(int) $stmt->fetchColumn()) {
             http_response_code(403);
             exit('Sem permissão para acessar este projeto.');
-        }
-    }
-    if ($tab === 'future_clients') {
-        $futureId = (int) ($request['fc_id'] ?? $request['delete'] ?? $request['convert'] ?? $request['id'] ?? $request['edit'] ?? 0);
-        if ($futureId > 0) {
-            $stmt = db()->prepare('select count(*) from future_clients where id = ? and company_id = ? and designer_id = ?');
-            $stmt->execute([$futureId, (int) $user['company_id'], $supervisorId]);
-            if (!(int) $stmt->fetchColumn()) {
-                http_response_code(403);
-                exit('Sem permissão para acessar este cliente.');
-            }
         }
     }
 }

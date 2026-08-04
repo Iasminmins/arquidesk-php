@@ -48,6 +48,7 @@ create table if not exists client_projects (
   id int unsigned auto_increment primary key,
   company_id int unsigned not null,
   designer_id int unsigned null,
+  intern_user_id int unsigned null,
   client_name varchar(160) not null,
   client_address varchar(255) null,
   client_phone varchar(40) not null,
@@ -76,8 +77,10 @@ create table if not exists client_projects (
   updated_at timestamp null default null on update current_timestamp,
   constraint projects_company_fk foreign key (company_id) references companies(id) on delete cascade,
   constraint projects_designer_fk foreign key (designer_id) references users(id) on delete set null,
+  constraint projects_intern_fk foreign key (intern_user_id) references users(id) on delete set null,
   index projects_company_stage_idx (company_id, current_stage),
-  index projects_designer_idx (designer_id)
+  index projects_designer_idx (designer_id),
+  index projects_intern_idx (intern_user_id)
 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci;
 
 create table if not exists flow_history (
