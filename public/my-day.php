@@ -253,7 +253,7 @@ if ($canManageTeam && $selectedUserId > 0) {
     $itemsSql .= ' and d.user_id = ?';
     $itemsParams[] = $userId;
 }
-$itemsSql .= " order by d.checklist_date asc, field(d.status, 'PENDENTE','CONCLUIDO','CANCELADO'), field(d.priority, 'ALTA','NORMAL','BAIXA'), d.source desc, d.created_at desc";
+$itemsSql .= " order by field(d.status, 'PENDENTE','CONCLUIDO','CANCELADO'), d.checklist_date desc, d.created_at desc, field(d.priority, 'ALTA','NORMAL','BAIXA'), d.source desc";
 $itemsStmt = db()->prepare($itemsSql);
 $itemsStmt->execute($itemsParams);
 $items = $itemsStmt->fetchAll();
