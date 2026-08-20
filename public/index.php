@@ -518,6 +518,7 @@ require __DIR__ . '/../app/includes/sidebar.php';
                     <div class="grid gap-2 sm:grid-cols-2">
                         <input class="min-h-10 rounded-md border border-line bg-white px-3 text-sm" type="date" name="start" value="<?= e($customStart) ?>">
                         <input class="min-h-10 rounded-md border border-line bg-white px-3 text-sm" type="date" name="end" value="<?= e($customEnd) ?>">
+                        <button class="min-h-10 rounded-md bg-ink px-4 text-sm font-bold text-white" type="submit" name="period" value="custom">Aplicar filtro</button>
                     </div>
                 <?php endif; ?>
             </div>

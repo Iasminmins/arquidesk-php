@@ -48,6 +48,13 @@ function my_day_url(string $date, bool $isAdmin, int $selectedUserId = 0, array 
     return '/my-day.php?' . http_build_query(array_merge($params, $extra));
 }
 
+function my_day_posted_text(string $key, string $fallback = ''): string
+{
+    $value = $_POST[$key] ?? $fallback;
+
+    return is_scalar($value) ? trim((string) $value) : trim($fallback);
+}
+
 function ensure_daily_checklist_schema(): void
 {
     $pdo = db();
@@ -155,8 +162,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $targetUserId = $userId;
         }
 
-        $title = trim($_POST['title'] ?? '');
-        $description = trim($_POST['description'] ?? '');
+        $title = my_day_posted_text('title');
+        $description = my_day_posted_text('description');
         $itemDate = $_POST['checklist_date'] ?? $date;
         $priority = $_POST['priority'] ?? 'NORMAL';
         $status = $_POST['status'] ?? 'PENDENTE';
