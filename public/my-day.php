@@ -93,14 +93,22 @@ function ensure_daily_checklist_schema(): void
     ] as $column => $sql) {
         $columnStmt->execute([$dbName, 'daily_checklist_items', $column]);
         if ((int) $columnStmt->fetchColumn() === 0) {
-            $pdo->exec($sql);
+            try {
+                $pdo->exec($sql);
+            } catch (PDOException $exception) {
+                error_log('Falha ao atualizar o schema do checklist: ' . $exception->getMessage());
+            }
         }
     }
 
     $indexStmt = $pdo->prepare('select count(*) from information_schema.statistics where table_schema = ? and table_name = ? and index_name = ?');
     $indexStmt->execute([$dbName, 'daily_checklist_items', 'dci_auto_unique']);
     if ((int) $indexStmt->fetchColumn() === 0) {
-        $pdo->exec('alter table daily_checklist_items add unique key dci_auto_unique (company_id, user_id, checklist_date, auto_key)');
+        try {
+            $pdo->exec('alter table daily_checklist_items add unique key dci_auto_unique (company_id, user_id, checklist_date, auto_key)');
+        } catch (PDOException $exception) {
+            error_log('Falha ao atualizar o schema do checklist: ' . $exception->getMessage());
+        }
     }
 }
 
