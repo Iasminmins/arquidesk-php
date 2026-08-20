@@ -88,6 +88,7 @@ function ensure_daily_checklist_schema(): void
     $dbName = $pdo->query('select database()')->fetchColumn();
     $columnStmt = $pdo->prepare('select count(*) from information_schema.columns where table_schema = ? and table_name = ? and column_name = ?');
     foreach ([
+        'description' => "alter table daily_checklist_items add description text null after title",
         'source' => "alter table daily_checklist_items add source varchar(20) not null default 'MANUAL' after status",
         'auto_key' => "alter table daily_checklist_items add auto_key varchar(160) null after source",
     ] as $column => $sql) {
@@ -214,9 +215,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = db()->prepare(
                 "update daily_checklist_items
                  set user_id = ?, client_project_id = ?, title = ?, description = ?, checklist_date = ?, priority = ?, status = ?,
-                     completed_at = case when ? = 'CONCLUIDO' then coalesce(completed_at, now()) else null end
+                     completed_at = ?
                  where id = ? and company_id = ?"
             );
+            $completedAt = $status === 'CONCLUIDO'
+                ? ($item['completed_at'] ?: date('Y-m-d H:i:s'))
+                : null;
             $stmt->execute([
                 $targetUserId,
                 $projectId > 0 ? $projectId : null,
@@ -225,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $itemDate,
                 $priority,
                 $status,
-                $status,
+                $completedAt,
                 $itemId,
                 $companyId,
             ]);
